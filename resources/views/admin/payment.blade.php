@@ -218,22 +218,82 @@
                                     ['value' => 'qris', 'label' => 'QRIS', 'icon' => 'M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z'],
                                     ['value' => 'transfer', 'label' => 'Transfer Bank', 'icon' => 'M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z'],
                                 ] as $metode)
+                            <label class="cursor-pointer">
+                                <input type="radio" name="metode" value="{{ $metode['value'] }}"
+                                    class="peer hidden"
+                                    onchange="handleMethodChange(this)"
+                                    {{ ($ticket->payment?->metode ?? 'tunai') === $metode['value'] ? 'checked' : '' }}>
+            
+                                <div class="flex flex-col items-center justify-center min-h-[100px] p-4 bg-gray-900 border border-gray-800 rounded-xl relative
+                                            peer-checked:border-blue-500/50 peer-checked:bg-blue-500/5 peer-checked:text-blue-400
+                                            text-gray-500 hover:border-gray-700 hover:text-gray-300 transition">
+                
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="{{ $metode['icon'] }}" />
+                                    </svg>
+                
+                                    <span class="text-xs font-semibold text-center">{{ $metode['label'] }}</span>
+                
+                                    {{-- Label Bank di bawah info transfer --}}
+                                    @if($metode['value'] === 'transfer')
+                                        <span id="display-bank-name" class="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-wider hidden"></span>
+                                    @endif
+                                </div>
+                            </label>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    {{-- Hidden Input untuk kirim data ke Backend --}}
+                    <input type="hidden" name="bank_name" id="selected-bank-input" value="{{ $ticket->payment?->bank_name ?? '' }}">
+
+                    <div id="bankModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+                        <div class="bg-[#18181b] border border-gray-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+                            {{-- Header --}}
+                            <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5">
+                                <h3 class="text-white font-semibold text-lg">Pilih Bank</h3>
+                                <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-white transition">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L12 12M12 12l6 6M12 12l6-6M12 12L6 6" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {{-- Grid Pilihan Bank --}}
+                            <div class="grid grid-cols-2 gap-4 mb-6">
+                                @foreach([
+                                    ['code' => 'bca', 'name' => 'Bank BCA', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/></svg>'],
+                                    ['code' => 'mandiri', 'name' => 'Bank Mandiri', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4"/></svg>'],
+                                    ['code' => 'bni', 'name' => 'Bank BNI', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16"/></svg>'],
+                                    ['code' => 'bri', 'name' => 'Bank BRI', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4h16v16H4z"/></svg>']
+                                ] as $bank)
                                 <label class="cursor-pointer">
-                                    <input type="radio" name="metode" value="{{ $metode['value'] }}"
-                                        class="peer hidden"
-                                        {{ ($ticket->payment?->metode ?? 'tunai') === $metode['value'] ? 'checked' : '' }}>
-                                    <div class="flex flex-col items-center gap-2 p-4 bg-gray-900 border border-gray-800 rounded-xl
-                                                peer-checked:border-blue-500/50 peer-checked:bg-blue-500/5 peer-checked:text-blue-400
-                                                text-gray-500 hover:border-gray-700 hover:text-gray-300 transition">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="{{ $metode['icon'] }}" />
-                                        </svg>
-                                        <span class="text-xs font-semibold">{{ $metode['label'] }}</span>
+                                    <input type="radio" name="temp_bank" value="{{ $bank['code'] }}" class="peer hidden" onchange="selectTempBank('{{ $bank['code'] }}')">
+                                    <div class="flex flex-col items-center justify-center p-5 bg-[#202024] border border-gray-800 rounded-xl h-28
+                                                peer-checked:border-blue-500 peer-checked:bg-blue-500/5 text-gray-400 peer-checked:text-white transition hover:border-gray-700">
+                    
+                                        {{-- Container SVG Logo Brand --}}
+                                        <div class="h-10 flex items-center justify-center mb-2 bg-white/5 px-4 py-1.5 rounded-lg w-full max-w-[120px]">
+                                            {!! $bank['svg'] !!}
+                                        </div>
+                                        <span class="text-xs font-medium">{{ $bank['name'] }}</span>
                                     </div>
                                 </label>
                                 @endforeach
                             </div>
+
+                            {{-- Action Buttons --}}
+                            <div class="flex justify-end gap-3 pt-4 border-t border-gray-800">
+                                <button type="button" onclick="closeModal()" class="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition">
+                                    Batal
+                                </button>
+                                <button type="button" id="btn-pilih-bank" onclick="confirmBankSelection()" disabled
+                                        class="px-6 py-2.5 bg-blue-100 hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-950 font-semibold rounded-xl text-sm transition">
+                                    Pilih
+                                </button>
+                            </div>
                         </div>
+                    </div>
                     </div>
 
                     {{-- Submit Button --}}
@@ -276,6 +336,70 @@
 
         document.getElementById('display-total').textContent =
             'Rp ' + total.toLocaleString('id-ID');
+    }
+
+    let tempSelectedBank = '';
+    let finalSelectedBank = "{{ $ticket->payment?->bank_name ?? '' }}";
+
+    // Cek kondisi awal saat halaman pertama dimuat
+    document.addEventListener("DOMContentLoaded", function() {
+        if(finalSelectedBank) {
+            updateBankDisplay(finalSelectedBank);
+        }
+    });
+
+    function handleMethodChange(input) {
+        if (input.value === 'transfer') {
+            // Tampilkan modal
+            document.getElementById('bankModal').classList.remove('hidden');
+        } else {
+            // Jika pilih Tunai/QRIS, hapus pilihan bank sebelumnya
+            finalSelectedBank = '';
+            document.getElementById('selected-bank-input').value = '';
+            const display = document.getElementById('display-bank-name');
+            display.classList.add('hidden');
+            display.innerText = '';
+        }
+    }
+
+    function selectTempBank(bankCode) {
+        tempSelectedBank = bankCode;
+        // Aktifkan tombol pilih
+        document.getElementById('btn-pilih-bank').removeAttribute('disabled');
+    }
+
+    function confirmBankSelection() {
+        if(tempSelectedBank) {
+            finalSelectedBank = tempSelectedBank;
+            // Set ke hidden input form
+            document.getElementById('selected-bank-input').value = finalSelectedBank;
+            // Update teks UI di bawah kartu transfer
+            updateBankDisplay(finalSelectedBank);
+            closeModal();
+        }
+    }
+
+    function updateBankDisplay(bankCode) {
+        const display = document.getElementById('display-bank-name');
+        display.innerText = 'BANK ' + bankCode.toUpperCase();
+        display.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('bankModal').classList.add('hidden');
+        // Reset radio button bank didalam modal jika batal
+        if(!finalSelectedBank) {
+            document.getElementsByName('metode').forEach(radio => {
+                if(radio.value !== 'transfer' && radio.checked) {
+                    // tetap di pilihan awal
+                } else if (radio.value === 'transfer') {
+                    radio.checked = false; // batalkan check transfer jika tidak jadi pilih bank
+                }
+            });
+        }
+        tempSelectedBank = '';
+        document.getElementsByName('temp_bank').forEach(radio => radio.checked = false);
+        document.getElementById('btn-pilih-bank').setAttribute('disabled', 'true');
     }
 </script>
 @endpush

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\ServiceTicket;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
@@ -60,6 +61,7 @@ class PaymentController extends Controller
 
         $total = $request->biaya_sparepart + $request->biaya_jasa;
 
+        DB::transaction(function () use ($request, $total) {
         Payment::updateOrCreate(
             ['service_ticket_id' => $request->service_ticket_id],
             [
@@ -74,13 +76,14 @@ class PaymentController extends Controller
             ]
         );
 
-        // Update total biaya dan status tiket
-        $ticket = ServiceTicket::find($request->service_ticket_id);
-        $ticket->update([
-            'total_biaya' => $total,
-            'status'      => 'selesai',
-        ]);
+        ServiceTicket::find($request->service_ticket_id)
+            ->update([
+                'total_biaya' => $total,
+                'status'      => 'selesai',
+            ]);
+        });
 
+        $ticket = ServiceTicket::find($request->service_ticket_id);
         return redirect()->route('admin.payment')
             ->with('success', 'Pembayaran tiket ' . $ticket->kode_servis . ' berhasil diproses!');
     }
