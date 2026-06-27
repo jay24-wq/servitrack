@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\TicketController;
 use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\PaymentController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Teknisi\TaskController;
 
 // Halaman utama tempat input nomor resi/tiket
 Route::get('/', [TrackingController::class, 'index'])->name('tracking.index');
@@ -56,12 +57,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // 🔵 GRUP KHUSUS TEKNISI
     Route::middleware(['role:teknisi'])->group(function () {
-        // 💡 PERBAIKAN: Mengubah URL menjadi /teknisi/... dan mencocokkan nama fungsi menjadi 'updateStatus'
-        Route::get('/teknisi/dashboard', [App\Http\Controllers\RepairTaskController::class, 'index'])->name('teknisi.dashboard');
-        Route::patch('/teknisi/sub-task/{id}/update', [RepairTaskController::class, 'updateStatus'])->name('teknisi.tasks.update');
-
-        // Halaman kerjaan teknisi lainnya (Buka jika sudah membuat)
-        // Route::post('/tickets/{id}/update-status', [TeknisiController::class, 'updateStatus']);
+        Route::prefix('teknisi')->name('teknisi.')->group(function () {
+            // 💡 PERBAIKAN: Mengubah URL menjadi /teknisi/... dan mencocokkan nama fungsi menjadi 'updateStatus'
+            Route::get('/teknisi/dashboard', [App\Http\Controllers\RepairTaskController::class, 'index'])->name('teknisi.dashboard');
+            Route::patch('/teknisi/sub-task/{id}/update', [RepairTaskController::class, 'updateStatus'])->name('teknisi.tasks.update');
+            Route::get('/dashboard', [TaskController::class, 'dashboard'])->name('dashboard');
+            Route::get('/my-tasks', [TaskController::class, 'index'])->name('my-tasks');
+            Route::patch('/tickets/{ticket}/status', [TaskController::class, 'updateStatus'])->name('tickets.updateStatus');
+            // Halaman kerjaan teknisi lainnya (Buka jika sudah membuat)
+            // Route::post('/tickets/{id}/update-status', [TeknisiController::class, 'updateStatus']);
+        });
     });
 });
 
