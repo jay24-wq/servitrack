@@ -19,7 +19,7 @@
                 </div>
                     <div class="hidden md:block ml-10 space-x-8">
                         <a href="#" class="text-white border-b-2 border-white pb-5 text-sm font-medium">Dashboard</a>
-                        <a href="#" class="text-gray-400 hover:text-white text-sm font-medium transition">Services</a>
+                        <a href="{{ route('tracking.search') }}" class="text-gray-400 hover:text-white text-sm font-medium transition">Services</a>
                         <a href="#" class="text-gray-400 hover:text-white text-sm font-medium transition">Support</a>
                         <a href="#" class="text-gray-400 hover:text-white text-sm font-medium transition">About</a>
                     </div>

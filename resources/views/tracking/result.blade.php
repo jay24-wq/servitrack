@@ -18,7 +18,7 @@
                     <a href="/" class="text-xl font-bold text-white tracking-wider">ServiTrack</a>
                 </div>    
                     <div class="hidden md:block ml-10 space-x-8">
-                        <a href="#" class="text-gray-400 hover:text-white text-sm font-medium transition">Dashboard</a>
+                        <a href="{{ route('tracking.index') }}" class="text-gray-400 hover:text-white text-sm font-medium transition">Dashboard</a>
                         <a href="#" class="text-white border-b-2 border-white pb-5 text-sm font-medium">Services</a>
                         <a href="#" class="text-gray-400 hover:text-white text-sm font-medium transition">Support</a>
                         <a href="#" class="text-gray-400 hover:text-white text-sm font-medium transition">About</a>
