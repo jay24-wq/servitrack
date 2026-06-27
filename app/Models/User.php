@@ -52,7 +52,7 @@ class User extends Authenticatable
 
     public function tickets()
     {
-        return $this->hasMany(ServiceTicket::class);
+        return $this->hasMany(ServiceTicket::class, 'user_id');
     }
     
     public function isAdmin()

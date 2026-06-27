@@ -35,7 +35,8 @@ class TicketController extends Controller
     {
         $teknisi  = User::where('role', 'teknisi')->get();
         $no_resi  = 'Auto-generate saat disimpan';
-        return view('admin.tickets.index', compact('teknisi', 'no_resi'));
+        $spareparts = \App\Models\Sparepart::where('sparepart_stock', '>', 0)->get();
+        return view('admin.tickets.index', compact('teknisi', 'no_resi', 'spareparts'));
     }
 
     public function store(Request $request)
@@ -50,8 +51,17 @@ class TicketController extends Controller
             'device_serial'    => 'required|string|max:50',
             'device_condition' => 'nullable|string|max:255',
             'keluhan'          => 'nullable|string',
-            'user_id'          => 'nullable|exists:users,id',
+            'total_biaya'      => 'required|numeric|min:0',
         ]);
+
+        $availableTechnician = User::where('role', 'teknisi')
+            ->withCount(['tickets' => function ($query) {
+                $query->whereNotIn('status', ['selesai', 'siap diambil']);
+            }])
+            ->orderBy('tickets_count', 'asc') // Urutkan dari yang tiket aktifnya paling sedikit (atau 0)
+            ->first();
+
+        $assignedUserId = $availableTechnician ? $availableTechnician->id : null;
 
         $kode = 'SRV-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
 
@@ -66,8 +76,9 @@ class TicketController extends Controller
             'device_serial'    => $request->device_serial,
             'device_condition' => $request->device_condition,
             'keluhan'          => $request->keluhan,
-            'user_id'          => $request->user_id,
+            'user_id'          => $assignedUserId,
             'status'           => 'antrian',
+            'total_biaya'      => $request->total_biaya,
         ]);
 
         return redirect()->route('admin.dashboard')
