@@ -185,4 +185,70 @@ class TicketController extends Controller
 
         return view('admin.queue', compact('tickets', 'stats', 'teknisiList'));
     }
+
+    public function reports()
+    {
+        // Stats utama
+        $totalPendapatan = \App\Models\Payment::where('status', 'lunas')->sum('total');
+        $totalBiayaPart  = \App\Models\Payment::where('status', 'lunas')->sum('biaya_sparepart');
+        $keuntunganBersih = $totalPendapatan - $totalBiayaPart;
+
+        $perangkatSelesai = ServiceTicket::where('status', 'selesai')->count();
+        $totalTicket      = ServiceTicket::count();
+
+        // Rata-rata waktu servis (hari dari created_at ke updated_at saat selesai)
+        $avgWaktu = ServiceTicket::where('status', 'selesai')
+            ->selectRaw('AVG(DATEDIFF(updated_at, created_at)) as avg_hari')
+            ->value('avg_hari');
+
+        // Chart 6 bulan terakhir
+        $chartData = [];
+        $maxVal    = 1;
+        for ($i = 5; $i >= 0; $i--) {
+            $date  = now()->subMonths($i);
+            $total = \App\Models\Payment::where('status', 'lunas')
+                ->whereYear('created_at', $date->year)
+                ->whereMonth('created_at', $date->month)
+                ->sum('total');
+            $chartData[] = [
+                'label' => strtoupper($date->translatedFormat('M')),
+                'value' => $total,
+            ];
+            if ($total > $maxVal) $maxVal = $total;
+        }
+        foreach ($chartData as &$d) {
+            $d['height'] = max(5, round(($d['value'] / $maxVal) * 100));
+        }
+
+        // Teknisi performa
+        $teknisiPerforma = \App\Models\User::where('role', 'teknisi')
+            ->withCount(['tickets as tiket_selesai' => function ($q) {
+                $q->where('status', 'selesai');
+            }])
+            ->having('tiket_selesai', '>', 0)
+            ->orderByDesc('tiket_selesai')
+            ->get()
+            ->map(function ($tek) {
+                $avgHari = ServiceTicket::where('user_id', $tek->id)
+                    ->where('status', 'selesai')
+                    ->selectRaw('AVG(DATEDIFF(updated_at, created_at)) as avg_hari')
+                    ->value('avg_hari') ?? 0;
+
+                $skor = max(0, min(100, 100 - ($avgHari * 5)));
+
+                return [
+                    'nama'          => $tek->name,
+                    'tiket_selesai' => $tek->tiket_selesai,
+                    'avg_hari'      => round($avgHari, 1),
+                    'skor'          => round($skor),
+                    'trend'         => $skor >= 90 ? 'up' : ($skor >= 75 ? 'flat' : 'down'),
+                ];
+            });
+
+        return view('admin.reports', compact(
+            'totalPendapatan', 'keuntunganBersih',
+            'perangkatSelesai', 'totalTicket',
+            'avgWaktu', 'chartData', 'teknisiPerforma'
+        ));
+    }
 }

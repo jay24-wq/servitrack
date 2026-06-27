@@ -261,24 +261,32 @@
 
                             {{-- Grid Pilihan Bank --}}
                             <div class="grid grid-cols-2 gap-4 mb-6">
-                                @foreach([
-                                    ['code' => 'bca', 'name' => 'Bank BCA', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/></svg>'],
-                                    ['code' => 'mandiri', 'name' => 'Bank Mandiri', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4"/></svg>'],
-                                    ['code' => 'bni', 'name' => 'Bank BNI', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16"/></svg>'],
-                                    ['code' => 'bri', 'name' => 'Bank BRI', 'svg' => '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4h16v16H4z"/></svg>']
-                                ] as $bank)
-                                <label class="cursor-pointer">
-                                    <input type="radio" name="temp_bank" value="{{ $bank['code'] }}" class="peer hidden" onchange="selectTempBank('{{ $bank['code'] }}')">
-                                    <div class="flex flex-col items-center justify-center p-5 bg-[#202024] border border-gray-800 rounded-xl h-28
-                                                peer-checked:border-blue-500 peer-checked:bg-blue-500/5 text-gray-400 peer-checked:text-white transition hover:border-gray-700">
-                    
-                                        {{-- Container SVG Logo Brand --}}
-                                        <div class="h-10 flex items-center justify-center mb-2 bg-white/5 px-4 py-1.5 rounded-lg w-full max-w-[120px]">
-                                            {!! $bank['svg'] !!}
+                                @php
+                                    $banks = [
+                                        ['code' => 'bca', 'name' => 'Bank BCA', 'icon' => 'storage/BCA.svg'],
+                                        ['code' => 'mandiri', 'name' => 'Bank Mandiri', 'icon' => 'storage/MANDIRI.svg'],
+                                        ['code' => 'bni', 'name' => 'Bank BNI', 'icon' => 'storage/BNI.svg'],
+                                        ['code' => 'bri', 'name' => 'Bank BRI', 'icon' => 'storage/BRI.svg'],
+                                    ];
+                                @endphp
+
+                                @foreach($banks as $bank)
+                                    <label class="cursor-pointer">
+                                        <input type="radio" name="temp_bank" value="{{ $bank['code'] }}"
+                                            class="peer hidden"
+                                            onchange="selectTempBank('{{ $bank['code'] }}')">
+
+                                        <div class="flex flex-col items-center justify-center p-5 bg-[#202024] border border-gray-800 rounded-xl h-28
+                                                    peer-checked:border-blue-500 peer-checked:bg-blue-500/5 text-gray-400 peer-checked:text-white transition hover:border-gray-700">
+
+                                            {{-- Container SVG Logo Brand --}}
+                                            <div class="h-10 flex items-center justify-center mb-2 bg-white/5 px-4 py-1.5 rounded-lg w-full max-w-[120px]">
+                                                <img src="{{ asset($bank['icon']) }}" alt="{{ $bank['name'] }}" class="h-12 w-12 object-contain">
+                                            </div>
+
+                                            <span class="text-xs font-medium">{{ $bank['name'] }}</span>
                                         </div>
-                                        <span class="text-xs font-medium">{{ $bank['name'] }}</span>
-                                    </div>
-                                </label>
+                                    </label>
                                 @endforeach
                             </div>
 
