@@ -82,14 +82,13 @@
             <div class="flex items-center gap-3">
                 <span class="text-xs text-gray-500">Urutkan:</span>
                 <div class="relative">
-                    <select name="sort" onchange="document.getElementById('sort-form').submit()"
-                            class="bg-gray-900 border border-gray-800 rounded-lg pl-3 pr-8 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 appearance-none cursor-pointer">
-                        <option value="name_asc" {{ request('sort', 'name_asc') === 'name_asc' ? 'selected' : '' }}>Nama (A-Z)</option>
-                        <option value="name_desc" {{ request('sort') === 'name_desc' ? 'selected' : '' }}>Nama (Z-A)</option>
-                    </select>
                     <form method="GET" action="{{ route('admin.staff') }}" id="sort-form">
                         <input type="hidden" name="role" value="{{ request('role', 'semua') }}">
-                        <input type="hidden" name="sort" id="sort-value" value="{{ request('sort', 'name_asc') }}">
+                        <select name="sort" onchange="this.form.submit()"
+                                class="bg-gray-900 border border-gray-800 rounded-lg pl-3 pr-8 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 appearance-none cursor-pointer">
+                            <option value="name_asc" {{ request('sort', 'name_asc') === 'name_asc' ? 'selected' : '' }}>Nama (A-Z)</option>
+                            <option value="name_desc" {{ request('sort') === 'name_desc' ? 'selected' : '' }}>Nama (Z-A)</option>
+                        </select>
                     </form>
                     <div class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-500">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
