@@ -21,7 +21,7 @@
             <div class="p-6 border-b border-gray-900/50">
                 <div class="flex items-center space-x-3">
                     <div class="p-2 bg-indigo-600/10 rounded-lg text-indigo-400">
-                        <i class="fa-solid fa-laptop-medical text-lg"></i>
+                        <i class="fa-solid fa-laptop text-lg"></i>
                     </div>
                     <div>
                         <h2 class="text-sm font-bold text-white tracking-wide uppercase">Main Workshop</h2>

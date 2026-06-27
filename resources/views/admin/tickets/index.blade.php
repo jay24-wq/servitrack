@@ -207,6 +207,63 @@
                     class="w-full bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition resize-none">{{ old('keluhan') }}</textarea>
         </div>
 
+        {{-- ================================================================
+            SECTION 5 — Estimasi Biaya Awal
+        ================================================================ --}}
+        <div class="bg-[#14161a] border border-gray-800 rounded-xl p-6 space-y-4">
+
+            <div class="flex items-center space-x-2 border-b border-gray-800 pb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-white font-semibold text-xs uppercase tracking-wider">Estimasi Biaya Awal</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {{-- Dropdown Suku Cadang --}}
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Perkiraan Suku Cadang
+                    </label>
+                    <select id="sparepart_select" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition">
+                        <option value="" data-harga="0">-- Tidak Ganti Part / Belum Tahu --</option>
+                        @foreach($spareparts as $part)
+                            {{-- Kita ganti $part->sparepart_name jadi $part->nama --}}
+                            {{-- Kita ganti $part->sparepart_price jadi $part->harga_satuan --}}
+                            <option value="{{ $part->id }}" data-harga="{{ $part->harga_satuan }}">
+                                {{ $part->nama }} (+Rp {{ number_format($part->harga_satuan, 0, ',', '.') }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- Biaya Jasa Flat --}}
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Biaya Jasa Analisis & Perbaikan
+                    </label>
+                    <input type="number" id="biaya_jasa" value="50000" readonly 
+                        class="w-full bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-sm text-gray-500 opacity-60 cursor-not-allowed outline-none">
+                </div>
+
+                {{-- Total Estimasi (Dikirim ke backend) --}}
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 text-blue-400">
+                        Total Estimasi ke Pelanggan
+                    </label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-2.5 text-sm text-gray-500">Rp</span>
+                        <input type="number" name="total_biaya" id="estimasi_biaya" value="50000" readonly
+                            class="w-full bg-gray-900/50 border border-blue-500/30 rounded-lg pl-10 pr-4 py-2.5 text-sm text-blue-400 font-bold outline-none">
+                    </div>
+                </div>
+            </div>
+            
+            <p class="text-gray-600 text-[10px]">
+                *Catatan: Jika keluhan belum jelas (seperti mati total), biarkan pilihan suku cadang kosong. Pelanggan hanya dikenakan estimasi biaya pemeriksaan dasar sebesar Rp 50.000.
+            </p>
+        </div>
+
     </form>
 </div>
 
@@ -236,6 +293,20 @@
 
 @push('scripts')
 <script>
+    // Daftarkan element baru
+    const sparepartSelect = document.getElementById('sparepart_select');
+    const biayaJasa       = document.getElementById('biaya_jasa');
+    const estimasiBiaya   = document.getElementById('estimasi_biaya');
+
+    // Fungsi hitung otomatis
+    sparepartSelect.addEventListener('change', function() {
+        let hargaPart = parseFloat(this.options[this.selectedIndex].getAttribute('data-harga')) || 0;
+        let jasa      = parseFloat(biayaJasa.value) || 0;
+    
+        // Set hasil penjumlahan ke input estimasi_biaya
+        estimasiBiaya.value = hargaPart + jasa;
+    });
+
     const serialInput = document.getElementById('field-serial');
     const footerError = document.getElementById('footer-error');
     const submitBtn   = document.getElementById('submit-btn');
