@@ -12,7 +12,7 @@ class StaffController extends Controller
 {
     public function index(Request $request)
     {
-        $query = User::latest();
+        $query = User::query();
 
         if ($request->role && $request->role !== 'semua') {
             $query->where('role', $request->role);
