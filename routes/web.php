@@ -50,6 +50,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/payment', [PaymentController::class, 'index'])->name('payment');
             Route::get('/payment/search', [PaymentController::class, 'search'])->name('payment.search');
             Route::post('/payment', [PaymentController::class, 'store'])->name('payment.store');
+            Route::get('/reports', [TicketController::class, 'reports'])->name('reports');
         });
     });
 
