@@ -53,8 +53,9 @@
                     <span>My Tasks</span>
                 </a>
 
-                <a href="#"
-                    class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition text-gray-500 hover:text-gray-300 hover:bg-gray-900/50">
+                <a href="{{ route('teknisi.stok.index') }}"
+                    class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition
+                    {{ request()->routeIs('teknisi.stok.index') ? 'bg-blue-600/10 text-white border-l-2 border-blue-500' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-900/50' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                     </svg>

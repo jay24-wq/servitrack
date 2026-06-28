@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\PaymentController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Teknisi\TaskController;
+use App\Http\Controllers\Teknisi\StokKomponenController;
 
 // Halaman utama tempat input nomor resi/tiket
 Route::get('/', [TrackingController::class, 'index'])->name('tracking.index');
@@ -64,6 +65,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/dashboard', [TaskController::class, 'dashboard'])->name('dashboard');
             Route::get('/my-tasks', [TaskController::class, 'index'])->name('my-tasks');
             Route::patch('/tickets/{ticket}/status', [TaskController::class, 'updateStatus'])->name('tickets.updateStatus');
+            Route::get('/stok', [StokKomponenController::class, 'index'])->name('stok.index');
             // Halaman kerjaan teknisi lainnya (Buka jika sudah membuat)
             // Route::post('/tickets/{id}/update-status', [TeknisiController::class, 'updateStatus']);
         });
