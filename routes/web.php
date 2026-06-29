@@ -25,6 +25,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             return redirect()->route('admin.dashboard'); // Tampilan dashboard bawaan Breeze untuk Admin
         } elseif (Auth::user()->role === 'teknisi') {
             return redirect()->route('teknisi.dashboard'); // Lempar teknisi ke halaman kerjanya
+        } elseif (Auth::user()->role === 'frontdesk') {
+            return redirect()->route('admin.tickets.create'); // Lempar frontdesk ke halaman pembuatan tiket/check-in
         }
 
         abort(403, 'Role tidak dikenali.');
@@ -35,12 +37,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // 🔴 GRUP KHUSUS ADMIN / FRONTDESK
+    // 🔴 GRUP AKSES BERSAMA (ADMIN & FRONTDESK)
+    Route::middleware(['role:admin,frontdesk'])->group(function () {
+        Route::prefix('admin')->name('admin.')->group(function () {
+            Route::get('/tickets/create', [AdminTicketController::class, 'create'])->name('tickets.create');
+            Route::post('/tickets', [AdminTicketController::class, 'store'])->name('tickets.store');
+        });
+    });
+
+    // 🔴 GRUP KHUSUS ADMIN
     Route::middleware(['role:admin'])->group(function () {
         Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('/dashboard', [AdminTicketController::class, 'overview'])->name('dashboard');
-            Route::get('/tickets/create', [AdminTicketController::class, 'create'])->name('tickets.create');
-            Route::post('/tickets', [AdminTicketController::class, 'store'])->name('tickets.store');
             Route::get('/tickets/{ticket}', [AdminTicketController::class, 'show'])->name('tickets.show');
             Route::patch('/tickets/{ticket}/status', [AdminTicketController::class, 'updateStatus'])->name('tickets.updateStatus');
             Route::get('/queue', [AdminTicketController::class, 'queue'])->name('queue');

@@ -33,6 +33,7 @@
             </div>
 
             <nav class="p-4 space-y-1.5">
+                @if(Auth::user()->role === 'admin')
                 <a href="{{ route('admin.dashboard') }}"
                 class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition
                 {{ request()->routeIs('admin.dashboard') ? 'bg-gradient-to-r from-indigo-600/10 to-transparent text-white border-l-2 border-indigo-500 rounded-r-lg' : 'text-gray-500 hover:text-gray-300' }}">
@@ -75,6 +76,16 @@
                     <i class="fa-regular fa-chart-bar w-5"></i>
                     <span>Reports</span>
                 </a>
+                @endif
+
+                @if(Auth::user()->role === 'frontdesk')
+                <a href="{{ route('admin.tickets.create') }}"
+                class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition
+                {{ request()->routeIs('admin.tickets.create') ? 'bg-gradient-to-r from-indigo-600/10 to-transparent text-white border-l-2 border-indigo-500 rounded-r-lg' : 'text-gray-500 hover:text-gray-300' }}">
+                    <i class="fa-solid fa-ticket w-5"></i>
+                    <span>Form Frontdesk</span>
+                </a>
+                @endif
             </nav>
         </div>
 
@@ -125,6 +136,10 @@
         {{-- Content --}}
         <main class="flex-1 overflow-y-auto">
             @yield('content')
+
+            @if(isset($slot) && !is_array($slot))
+                {{ $slot }}
+            @endif
         </main>
 
     </div>

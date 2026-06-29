@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use App\Models\Sparepart;
 use App\Models\Payment;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class TicketController extends Controller
 {
@@ -80,6 +81,11 @@ class TicketController extends Controller
             'status'           => 'antrian',
             'total_biaya'      => $request->total_biaya,
         ]);
+
+        if (Auth::user()->role === 'frontdesk') {
+            return redirect()->route('admin.tickets.create')
+                ->with('success', 'Tiket ' . $kode . ' berhasil dibuat!');
+        }
 
         return redirect()->route('admin.dashboard')
             ->with('success', 'Tiket ' . $kode . ' berhasil dibuat!');

@@ -173,18 +173,25 @@
                 <span class="text-white font-semibold text-xs uppercase tracking-wider">Foto Dokumentasi</span>
             </div>
 
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                @foreach([
-                    ['icon' => 'M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z', 'label' => 'Tampak Depan'],
-                ] as $slot)
-                <label class="border border-dashed border-gray-800 bg-gray-900/50 rounded-xl aspect-square flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500/40 hover:bg-blue-500/5 transition group">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600 group-hover:text-blue-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="{{ $slot['icon'] }}" />
+            <!-- Flex Container untuk Tombol & Pratinjau (Scrollable Horizontal) -->
+            <div class="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-thin">
+                
+                <!-- Tombol Tambah Gambar (Permanen di paling kiri) -->
+                <label id="add-photo-btn" class="shrink-0 w-28 h-28 border border-dashed border-gray-800 bg-gray-900/50 rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500/40 hover:bg-blue-500/5 transition group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600 group-hover:text-blue-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
-                    <span class="text-[9px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-blue-400 transition">{{ $slot['label'] }}</span>
-                    <input type="file" name="foto[]" accept="image/*" class="hidden">
+                    <span class="text-[9px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-blue-400 transition text-center px-2">Tambah Gambar</span>
+                    <div id="file-input-container">
+                        <input type="file" accept="image/*" class="hidden main-file-input">
+                    </div>
                 </label>
-                @endforeach
+
+                <!-- Container untuk Gambar Pratinjau (Prepend secara visual) -->
+                <div id="preview-list" class="flex items-center gap-3">
+                    <!-- Preview cards akan di-render di sini oleh JavaScript -->
+                </div>
+
             </div>
 
             <input type="hidden" name="foto_keterangan[]" value="Device">
@@ -325,5 +332,58 @@
 
     serialInput.addEventListener('input', cekSerial);
     cekSerial();
+
+    // Handle Multiple Local Image Previews (FIFO / Prepend secara visual)
+    const fileInputContainer = document.getElementById('file-input-container');
+    const previewList = document.getElementById('preview-list');
+
+    fileInputContainer.addEventListener('change', function(e) {
+        if (e.target.classList.contains('main-file-input')) {
+            const input = e.target;
+            const file = input.files[0];
+            
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    // 1. Buat elemen preview card
+                    const card = document.createElement('div');
+                    card.className = 'relative shrink-0 w-28 h-28 rounded-xl overflow-hidden border border-gray-800 group';
+                    
+                    // 2. Isi konten card (gambar + tombol hapus)
+                    card.innerHTML = `
+                        <img src="${event.target.result}" class="w-full h-full object-cover">
+                        <button type="button" class="absolute top-1.5 right-1.5 bg-red-600/80 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 text-[10px] z-10 btn-remove-photo">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    `;
+                    
+                    // 3. Pindahkan input file aktif ke dalam card agar ikut ter-submit ke backend dengan name="foto[]"
+                    input.name = 'foto[]';
+                    input.className = 'hidden';
+                    card.appendChild(input);
+                    
+                    // 4. Masukkan card ke paling depan (Prepend / FIFO secara visual) di preview-list
+                    previewList.insertBefore(card, previewList.firstChild);
+                    
+                    // 5. Buat input file baru di tombol "Tambah Gambar" untuk upload berikutnya
+                    const newInput = document.createElement('input');
+                    newInput.type = 'file';
+                    newInput.accept = 'image/*';
+                    newInput.className = 'hidden main-file-input';
+                    fileInputContainer.appendChild(newInput);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    });
+
+    // Menghapus foto dari list pratinjau
+    previewList.addEventListener('click', function(e) {
+        const removeBtn = e.target.closest('.btn-remove-photo');
+        if (removeBtn) {
+            const card = removeBtn.closest('div');
+            card.remove();
+        }
+    });
 </script>
 @endpush
