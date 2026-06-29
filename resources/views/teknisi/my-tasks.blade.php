@@ -468,27 +468,87 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
                     {{-- Panel Kondisi A: Form Quotation --}}
                     <div id="panelKondisiA" class="space-y-3 bg-orange-950/10 border border-orange-900/30 p-4 rounded-xl">
                         <span class="text-xs font-bold text-orange-400 block">Form Estimasi Biaya Tambahan</span>
-                        <div class="grid grid-cols-3 gap-2">
-                            <div class="col-span-2">
-                                <input type="text" name="nama_part_tambahan" ${disabledAttr}
-                                    class="w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2 text-xs text-white"
-                                    placeholder="Nama Komponen Tambahan">
+
+                        {{-- Dropdown Sparepart dari DB --}}
+                        <div>
+                            <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500 block mb-1">
+                                Pilih Komponen dari Gudang
+                            </label>
+                            <div id="sparepartLoadingState"
+                                class="flex items-center gap-2 bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5 text-xs text-gray-500">
+                                <svg class="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                Memuat daftar komponen...
                             </div>
-                            <div>
-                                <input type="number" name="harga_part_tambahan" id="hargaPart" ${disabledAttr}
-                                    class="w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2 text-xs text-white"
-                                    placeholder="Harga Satuan" oninput="hitungTotal()">
+                            <select name="id_sparepart" id="selectSparepart" ${disabledAttr}
+                                class="hidden w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5 text-xs
+                                    text-white focus:border-orange-500 focus:outline-none"
+                                onchange="onSparepartChange(this)">
+                                <option value="">-- Pilih Komponen --</option>
+                            </select>
+                        </div>
+
+                        {{-- Info Stok & Harga (muncul setelah pilih komponen) --}}
+                        <div id="sparepartInfo" class="hidden grid grid-cols-2 gap-2">
+                            <div class="bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5">
+                                <p class="text-[10px] text-gray-500 mb-0.5">Sisa Stok</p>
+                                <p id="infoStok" class="text-xs font-bold text-white">-</p>
+                            </div>
+                            <div class="bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5">
+                                <p class="text-[10px] text-gray-500 mb-0.5">Harga Satuan</p>
+                                <p id="infoHarga" class="text-xs font-bold text-orange-400">-</p>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <input type="number" name="biaya_jasa_tambahan" id="biayaJasa" ${disabledAttr}
-                                class="w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2 text-xs text-white"
-                                placeholder="Biaya Jasa Teknisi Tambahan" oninput="hitungTotal()">
-                            <input type="number" name="total_estimasi_baru" id="totalEstimasi" readonly
-                                class="w-full bg-orange-950/30 border border-orange-900/50 rounded-lg p-2 text-xs text-orange-400 font-bold"
-                                placeholder="Total Estimasi Baru (Auto)">
+
+                        {{-- Hidden input harga part (diisi otomatis dari dropdown) --}}
+                        <input type="hidden" name="harga_part_tambahan" id="inputHargaPart" value="0">
+                        <input type="hidden" name="nama_part_tambahan" id="inputNamaPart" value="">
+
+                        {{-- Biaya Jasa (dipatok Rp 50.000) --}}
+                        <div>
+                            <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500 block mb-1">
+                                Biaya Jasa Teknisi
+                            </label>
+                            <div class="flex items-center bg-gray-900/60 border border-gray-800 rounded-lg p-2.5 gap-2">
+                                <span class="text-xs text-gray-500">Rp</span>
+                                <span class="text-xs font-bold text-white">50.000</span>
+                                <span class="text-[10px] text-gray-600 ml-auto italic">Tarif tetap</span>
+                            </div>
+                            <input type="hidden" name="biaya_jasa_tambahan" value="50000">
                         </div>
+
+                        {{-- Total Estimasi Baru (auto-hitung) --}}
+                        <div>
+                            <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500 block mb-1">
+                                Total Estimasi Baru
+                            </label>
+                            <div class="bg-orange-950/30 border border-orange-900/50 rounded-lg p-2.5 flex items-center justify-between">
+                                <span class="text-xs text-gray-500">Harga Komponen + Rp 50.000 jasa</span>
+                                <span id="displayTotal" class="text-sm font-bold text-orange-400">Rp 0</span>
+                            </div>
+                            <input type="hidden" name="total_estimasi_baru" id="inputTotalEstimasi" value="0">
+                        </div>
+
                         <input type="hidden" name="kondisi" id="inputKondisiHidden" value="A">
+                    </div>
+
+                    {{-- ══ PANEL KONDISI C ══ --}}
+                    <div id="panelKondisiC" class="hidden space-y-3 bg-sky-950/10 border border-sky-900/30 p-4 rounded-xl">
+                        <span class="text-xs font-bold text-sky-400 block">Informasi Komponen yang Dibutuhkan</span>
+                        <div>
+                            <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500 block mb-1">
+                                Nama Komponen yang Stoknya Habis
+                            </label>
+                            <input type="text" name="nama_komponen_indent" id="inputKomponenIndent"
+                                class="w-full bg-[#0b0c0f] border border-sky-900/40 rounded-lg p-2.5 text-xs text-white
+                                    focus:border-sky-500 focus:outline-none"
+                                placeholder="Contoh: LCD iPhone 13 Pro, IC Charger MacBook Air M2...">
+                            <p class="text-[11px] text-gray-600 mt-1.5">
+                                Nama ini akan dikirim ke Admin sebagai referensi pengadaan barang.
+                            </p>
+                        </div>
                     </div>
 
                     {{-- Panel Kondisi D: Input Komponen Rusak --}}
@@ -508,6 +568,10 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
 
             // Default button untuk Kondisi A
             footer.innerHTML = buildFooterButton('A', waLocked);
+
+            if (!waLocked) {
+                fetchSpareparts();
+            }
             break;
 
         // ────── MENUNGGU PART ──────
@@ -693,6 +757,113 @@ function closeModal() {
 
 function handleBackdropClick(e) {
     if (e.target === document.getElementById('ticketDetailModal')) closeModal();
+}
+
+// ── Fetch daftar sparepart dari API ──────────────────────────────────
+function fetchSpareparts() {
+    const API_URL = "{{ route('teknisi.api.spareparts') }}";
+
+    fetch(API_URL, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        }
+    })
+    .then(res => {
+        if (!res.ok) throw new Error('Gagal memuat data komponen.');
+        return res.json();
+    })
+    .then(data => {
+        const loading = document.getElementById('sparepartLoadingState');
+        const select  = document.getElementById('selectSparepart');
+        if (!loading || !select) return;
+
+        // Sembunyikan loading, tampilkan select
+        loading.classList.add('hidden');
+        select.classList.remove('hidden');
+
+        // Isi option dari data API
+        data.forEach(part => {
+            const option = document.createElement('option');
+            option.value        = part.id;
+            option.textContent  = part.label + (part.tersedia ? ` (Stok: ${part.stok})` : ' — HABIS');
+            option.dataset.harga  = part.harga;
+            option.dataset.stok   = part.stok;
+            option.dataset.label  = part.label;
+            option.disabled       = !part.tersedia; // nonaktifkan yang habis
+            select.appendChild(option);
+        });
+    })
+    .catch(err => {
+        const loading = document.getElementById('sparepartLoadingState');
+        if (loading) {
+            loading.innerHTML = `
+                <span class="text-red-400 text-xs">Gagal memuat komponen. Coba refresh halaman.</span>
+            `;
+        }
+        console.error(err);
+    });
+}
+
+// ── Saat sparepart dipilih dari dropdown ─────────────────────────────
+function onSparepartChange(select) {
+    const selectedOption = select.options[select.selectedIndex];
+    const infoBox        = document.getElementById('sparepartInfo');
+    const infoStok       = document.getElementById('infoStok');
+    const infoHarga      = document.getElementById('infoHarga');
+    const inputHarga     = document.getElementById('inputHargaPart');
+    const inputNama      = document.getElementById('inputNamaPart');
+    const displayTotal   = document.getElementById('displayTotal');
+    const inputTotal     = document.getElementById('inputTotalEstimasi');
+
+    if (!select.value) {
+        infoBox.classList.add('hidden');
+        inputHarga.value  = 0;
+        inputNama.value   = '';
+        displayTotal.textContent = 'Rp 0';
+        inputTotal.value  = 0;
+        return;
+    }
+
+    const harga = parseInt(selectedOption.dataset.harga) || 0;
+    const stok  = parseInt(selectedOption.dataset.stok)  || 0;
+    const nama  = selectedOption.dataset.label || '';
+    const total = harga + 50000; // harga komponen + biaya jasa tetap
+
+    // Tampilkan info box
+    infoBox.classList.remove('hidden');
+    infoStok.textContent  = stok + ' unit';
+    infoHarga.textContent = 'Rp ' + harga.toLocaleString('id-ID');
+
+    // Isi hidden input
+    inputHarga.value = harga;
+    inputNama.value  = nama;
+
+    // Update total
+    displayTotal.textContent = 'Rp ' + total.toLocaleString('id-ID');
+    inputTotal.value = total;
+}
+
+// ── Saat radio kondisi berubah ────────────────────────────────────────
+function onKondisiChange(kondisi) {
+    const panelA  = document.getElementById('panelKondisiA');
+    const panelC  = document.getElementById('panelKondisiC');
+    const panelD  = document.getElementById('panelKondisiD');
+    const hidden  = document.getElementById('inputKondisiHidden');
+    const footer  = document.getElementById('modalFooterButtons');
+
+    // Sembunyikan semua panel dulu
+    panelA?.classList.add('hidden');
+    panelC?.classList.add('hidden');
+    panelD?.classList.add('hidden');
+
+    // Tampilkan panel yang sesuai
+    if (kondisi === 'A') panelA?.classList.remove('hidden');
+    if (kondisi === 'C') panelC?.classList.remove('hidden');
+    if (kondisi === 'D') panelD?.classList.remove('hidden');
+
+    if (hidden) hidden.value = kondisi;
+    footer.innerHTML = buildFooterButton(kondisi, false);
 }
 </script>
 

@@ -27,4 +27,22 @@ class StokKomponenController extends Controller
 
         return view('teknisi.stok-komponen', compact('spareparts', 'daftarMerek'));
     }
+
+    public function apiList()
+    {
+        $spareparts = \App\Models\Sparepart::select('id', 'nama', 'merek', 'harga_satuan', 'sparepart_stock')
+            ->orderBy('nama')
+            ->get()
+            ->map(function ($part) {
+                return [
+                    'id'      => $part->id,
+                    'label'   => $part->nama . ($part->merek ? ' — ' . $part->merek : ''),
+                    'harga'   => $part->harga_satuan,
+                    'stok'    => $part->sparepart_stock,
+                    'tersedia'=> $part->sparepart_stock > 0,
+                ];
+            });
+
+        return response()->json($spareparts);
+    }
 }

@@ -74,6 +74,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/my-tasks', [TeknisiTicketController::class, 'index'])->name('my-tasks');
             Route::patch('/tickets/{service_ticket}/status', [TeknisiTicketController::class, 'updateStatus'])->name('tickets.updateStatus');
             Route::patch('/tickets/{service_ticket}/update-detail', [TeknisiTicketController::class, 'updateDetail'])->name('tickets.updateDetail');
+            Route::get('/api/spareparts', [StokKomponenController::class, 'apiList'])->name('api.spareparts');
             Route::get('/stok', [StokKomponenController::class, 'index'])->name('stok.index');
             // Halaman kerjaan teknisi lainnya (Buka jika sudah membuat)
             // Route::post('/tickets/{id}/update-status', [TeknisiController::class, 'updateStatus']);

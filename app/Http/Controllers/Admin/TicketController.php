@@ -114,6 +114,11 @@ class TicketController extends Controller
         $stats = [
             'total'            => ServiceTicket::count(),
             'antrian'          => ServiceTicket::where('status', 'antrian')->count(),
+            'menunggu_part'    => ServiceTicket::where('status', 'menunggu part')->count(),         
+            'menunggu_approval'=> ServiceTicket::where('status', 'menunggu part')                  
+                                ->where('sub_status', 'waiting_approval')->count(),
+            'menunggu_indent'  => ServiceTicket::where('status', 'menunggu part')                   
+                                ->where('sub_status', 'waiting_indent')->count(),
             'selesai_hari_ini' => ServiceTicket::where('status', 'selesai')
                                     ->whereDate('updated_at', today())->count(),
             'selesai_growth'   => 12, // nanti bisa dihitung dinamis
@@ -183,19 +188,20 @@ class TicketController extends Controller
 
         $totalTickets     = ServiceTicket::count();
         $completedTickets = ServiceTicket::where('status', 'selesai')->count();
-        $efficiencyRate   = $totalTickets > 0
-            ? round(($completedTickets / $totalTickets) * 100)
-            : 0;
 
         $stats = [
             'pengerjaan'        => $todayPengerjaan,
             'pengerjaan_growth' => $growthPengerjaan,
             'antrian'           => ServiceTicket::where('status', 'antrian')->count(),
+            'menunggu_part'    => ServiceTicket::where('status', 'menunggu part')->count(),        
+            'menunggu_approval'=> ServiceTicket::where('status', 'menunggu part')                  
+                                ->where('sub_status', 'waiting_approval')->count(),
+            'menunggu_indent'  => ServiceTicket::where('status', 'menunggu part')                   
+                                ->where('sub_status', 'waiting_indent')->count(),
             'selesai_hari_ini'  => ServiceTicket::where('status', 'selesai')
                                 ->whereDate('updated_at', today())->count(),
             'urgent'            => ServiceTicket::where('status', 'antrian')
                                 ->whereNull('user_id')->count(),
-            'efficiency_rate'   => $efficiencyRate,
         ];
 
         $teknisiList = \App\Models\User::where('role', 'teknisi')->get();
