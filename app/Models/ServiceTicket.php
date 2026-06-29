@@ -18,8 +18,10 @@ class ServiceTicket extends Model
         'checkin_date',
         'keluhan',
         'status',
+        'sub_status',
         'user_id',
         'total_biaya',
+        'catatan_teknisi',
     ];
 
     protected $casts = [

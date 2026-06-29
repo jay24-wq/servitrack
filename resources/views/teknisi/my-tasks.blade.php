@@ -3,7 +3,7 @@
 @section('title', 'My Tasks - ServiTrack')
 
 @section('content')
-{{-- Kanban Board: Full height, horizontal scroll --}}
+
 <div class="h-full overflow-x-auto overflow-y-hidden p-6">
     <div class="flex gap-7 h-full" style="min-width: max-content;">
 
@@ -59,21 +59,36 @@
             <div class="flex-1 overflow-y-auto p-3 space-y-3 bg-[#0b0c0f]">
                 @forelse($col['tickets'] as $ticket)
                 @php
-                    $isUrgent  = $status === 'menunggu part';
-                    $isPending = $status === 'pengerjaan';
+                    $isUrgent      = $status === 'menunggu part';
+                    $isPending     = $status === 'pengerjaan';
+                    $isUnrepairable = $ticket->sub_status === 'unrepairable';
+
+                    // Tentukan warna border-left kartu
+                    $cardBorderLeft = '';
+                    if ($isUnrepairable)                          $cardBorderLeft = 'border-l-2 border-l-red-500';
+                    elseif ($ticket->sub_status === 'waiting_approval') $cardBorderLeft = 'border-l-2 border-l-orange-500';
+                    elseif ($ticket->sub_status === 'waiting_indent')   $cardBorderLeft = 'border-l-2 border-l-sky-500';
+                    elseif ($isPending)                           $cardBorderLeft = 'border-l-2 border-l-blue-500';
                 @endphp
 
-                <div class="bg-[#14161a] border border-gray-800 rounded-xl p-4 space-y-3 hover:border-gray-700 transition group
-                            {{ $isUrgent ? 'border-l-2 border-l-orange-500' : '' }}
-                            {{ $isPending ? 'border-l-2 border-l-blue-500' : '' }}">
+                <div class="bg-[#14161a] border border-gray-800 rounded-xl p-4 space-y-3
+                            hover:border-gray-700 transition group {{ $cardBorderLeft }}">
 
-                    {{-- Ticket ID --}}
+                    {{-- Ticket ID + Icon --}}
                     <div class="flex items-center justify-between">
                         <span class="text-[9px] font-mono text-gray-600">#{{ $ticket->kode_servis }}</span>
                         <div class="flex items-center gap-1.5">
-                            @if($isUrgent)
+                            @if($isUnrepairable)
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            @elseif($ticket->sub_status === 'waiting_approval')
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            @elseif($ticket->sub_status === 'waiting_indent')
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
                             </svg>
                             @elseif($status === 'siap diambil')
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -90,6 +105,33 @@
                             @endif
                         </div>
                     </div>
+
+                    {{-- SUB-BADGE — muncul hanya di kolom "menunggu part" --}}
+                    @if($status === 'menunggu part')
+                    <div class="flex">
+                        @if($ticket->sub_status === 'waiting_approval')
+                        <span class="inline-flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                            <span class="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse block"></span>
+                            Menunggu Approval WA
+                        </span>
+                        @elseif($ticket->sub_status === 'waiting_indent')
+                        <span class="inline-flex items-center gap-1 bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                            <span class="w-1.5 h-1.5 rounded-full bg-sky-400 block"></span>
+                            Menunggu Indent / Order Part
+                        </span>
+                        @endif
+                    </div>
+                    @endif
+
+                    {{-- Sub-badge Rusak Total di kolom siap diambil --}}
+                    @if($isUnrepairable)
+                    <div class="flex">
+                        <span class="inline-flex items-center gap-1 bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500 block"></span>
+                            Tidak Bisa Diperbaiki
+                        </span>
+                    </div>
+                    @endif
 
                     {{-- Device --}}
                     <div>
@@ -119,24 +161,35 @@
                         </span>
                     </div>
 
-                    {{-- Action --}}
+                    {{-- Action Bar --}}
                     <div class="flex items-center justify-between pt-1 border-t border-gray-800/60">
-                        <a href="#"
+                        <button type="button"
+                            onclick="openDetailModal(this)"
+                            data-id="{{ $ticket->id }}"
+                            data-status="{{ $status }}"
+                            data-sub-status="{{ $ticket->sub_status ?? '' }}"
+                            data-kode="{{ $ticket->kode_servis }}"
+                            data-device="{{ $ticket->device_name }} {{ $ticket->device_brand }}"
+                            data-pelanggan="{{ $ticket->nama_pelanggan }}"
+                            data-keluhan="{{ e($ticket->keluhan) }}"
+                            data-estimasi="{{ number_format($ticket->total_biaya ?? 0, 0, ',', '.') }}"
+                            data-catatan="{{ e($ticket->catatan_teknisi ?? '') }}"
+                            data-wa-locked="{{ $ticket->sub_status === 'waiting_approval' ? 'true' : 'false' }}"
                             class="text-[9px] font-bold uppercase tracking-wider
-                            {{ $isPending ? 'text-blue-400 border border-blue-500/30 bg-blue-500/5' : 'text-gray-500 border border-gray-800 bg-transparent' }}
-                            px-3 py-1.5 rounded-lg hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5 transition">
+                                {{ $isPending ? 'text-blue-400 border border-blue-500/30 bg-blue-500/5' : 'text-gray-500 border border-gray-800 bg-transparent' }}
+                                px-3 py-1.5 rounded-lg hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5 transition">
                             Buka Detail
-                        </a>
+                        </button>
 
-                        {{-- Quick Status Update --}}
-                        @if($status !== 'selesai')
+                        {{-- Quick Status Dropdown --}}
+                        @if($status !== 'selesai' && $ticket->sub_status !== 'waiting_approval')
                         <div class="relative group/menu">
                             <button class="p-1.5 text-gray-600 hover:text-white hover:bg-gray-800 rounded-lg transition">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
                                 </svg>
                             </button>
-                            <div class="hidden group-hover/menu:block absolute right-0 bottom-8 w-40 bg-[#14161a] border border-gray-800 rounded-xl shadow-2xl z-20 overflow-hidden">
+                            <div class="hidden group-hover/menu:block absolute right-0 bottom-8 w-44 bg-[#14161a] border border-gray-800 rounded-xl shadow-2xl z-20 overflow-hidden">
                                 @php
                                     $nextStatuses = [
                                         'antrian'         => ['pengecekan'],
@@ -153,14 +206,16 @@
                                     @csrf
                                     @method('PATCH')
                                     <input type="hidden" name="status" value="{{ $nextStatus }}">
-                                    <button type="submit"
-                                            class="w-full text-left px-3 py-2 text-[10px] text-gray-400 hover:text-white hover:bg-gray-800 transition capitalize">
+                                    <button type="submit" class="w-full text-left px-3 py-2 text-[10px] text-gray-400 hover:text-white hover:bg-gray-800 transition capitalize">
                                         → {{ ucfirst($nextStatus) }}
                                     </button>
                                 </form>
                                 @endforeach
                             </div>
                         </div>
+                        @elseif($ticket->sub_status === 'waiting_approval')
+                        {{-- Dropdown dikunci saat menunggu approval WA --}}
+                        <span class="text-[9px] text-orange-400/50 px-2 italic">Terkunci</span>
                         @else
                         <span class="text-[9px] text-gray-700 px-2">
                             {{ $ticket->status === 'selesai' ? 'Paid' : '' }}
@@ -176,7 +231,469 @@
             </div>
         </div>
         @endforeach
-
     </div>
 </div>
+
+
+{{-- ═══════════════════════════════════════════════════════════════════ --}}
+{{--                     MODAL DETAIL TIKET                             --}}
+{{-- ═══════════════════════════════════════════════════════════════════ --}}
+<div id="ticketDetailModal"
+        class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        onclick="handleBackdropClick(event)">
+
+    <div class="bg-[#0f1115] border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col text-white shadow-2xl">
+
+        {{-- Header --}}
+        <div class="p-5 border-b border-gray-800 flex items-start justify-between shrink-0">
+            <div>
+                <span id="modalTicketCode" class="text-xs font-mono text-gray-500">#-</span>
+                <h3 id="modalDeviceName" class="text-base font-bold text-white mt-0.5">-</h3>
+            </div>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-white p-1.5 rounded-lg bg-gray-900 border border-gray-800 transition text-xs shrink-0 ml-4">
+                ✕ Tutup
+            </button>
+        </div>
+
+        {{-- Body --}}
+        <div class="p-6 overflow-y-auto space-y-5">
+
+            {{-- Info Dasar --}}
+            <div class="grid grid-cols-2 gap-4 bg-[#14161a] p-4 rounded-xl border border-gray-800/50">
+                <div>
+                    <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500">Nama Pelanggan</label>
+                    <p id="modalCustomerName" class="text-white font-medium mt-0.5 text-sm">-</p>
+                </div>
+                <div>
+                    <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500">Estimasi Biaya Awal</label>
+                    <p id="modalInitialCost" class="text-amber-400 font-bold mt-0.5 text-sm">Rp 0</p>
+                </div>
+                <div class="col-span-2 border-t border-gray-800/40 pt-3">
+                    <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500">Keluhan Perangkat</label>
+                    <p id="modalComplaint" class="text-gray-400 mt-1 italic text-xs leading-relaxed">-</p>
+                </div>
+            </div>
+
+            {{-- Banner WA Locked (hanya muncul jika sub_status = waiting_approval) --}}
+            <div id="waBanner" class="hidden items-center gap-3 bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <div>
+                    <p class="text-xs font-bold text-orange-400">Form Terkunci — Menunggu Persetujuan Pelanggan</p>
+                    <p class="text-[11px] text-gray-500 mt-0.5">Rincian biaya sudah terkirim ke WhatsApp pelanggan. Formulir tidak bisa diubah sampai pelanggan merespons.</p>
+                </div>
+            </div>
+
+            {{-- Container Form Dinamis --}}
+            <form id="modalActionForm" method="POST" action="">
+                @csrf
+                @method('PATCH')
+                <div id="dynamicFormContainer"></div>
+                <div id="modalFooterButtons" class="mt-5 pt-4 border-t border-gray-800 flex justify-end gap-3"></div>
+            </form>
+
+        </div>
+    </div>
+</div>
+
+
+{{-- ═══════════════════════════════════════════════════════════════════ --}}
+{{--                     JAVASCRIPT LOGIC                               --}}
+{{-- ═══════════════════════════════════════════════════════════════════ --}}
+<script>
+const BASE_URL = "{{ url('/teknisi/tickets') }}";
+
+// ── Buka Modal ────────────────────────────────────────────────────────
+function openDetailModal(btn) {
+    const ticketId     = btn.dataset.id;
+    const currentStatus = btn.dataset.status;
+    const subStatus    = btn.dataset.subStatus;
+
+    const data = {
+        kode         : btn.dataset.kode,
+        device       : btn.dataset.device,
+        pelanggan    : btn.dataset.pelanggan,
+        keluhan      : btn.dataset.keluhan,
+        estimasi_awal: btn.dataset.estimasi,
+        catatan      : btn.dataset.catatan,
+        wa_locked    : btn.dataset.waLocked === 'true',
+    };
+
+    const modal    = document.getElementById('ticketDetailModal');
+    const form     = document.getElementById('modalActionForm');
+    const waBanner = document.getElementById('waBanner');
+
+    // Isi header info
+    document.getElementById('modalTicketCode').innerText   = '#' + data.kode;
+    document.getElementById('modalDeviceName').innerText   = data.device;
+    document.getElementById('modalCustomerName').innerText = data.pelanggan;
+    document.getElementById('modalInitialCost').innerText  = 'Rp ' + data.estimasi_awal;
+    document.getElementById('modalComplaint').innerText    = data.keluhan || '-';
+
+    // Set action URL
+    form.action = BASE_URL + '/' + ticketId + '/update-detail';
+
+    // Tampilkan atau sembunyikan banner WA locked
+    waBanner.classList.toggle('hidden', !data.wa_locked);
+    waBanner.classList.toggle('flex',    data.wa_locked);
+
+    // Render konten form sesuai status
+    renderFormByStatus(currentStatus, subStatus, data.wa_locked, data);
+
+    modal.classList.remove('hidden');
+}
+
+// ── Render Form Dinamis ───────────────────────────────────────────────
+function renderFormByStatus(status, subStatus, waLocked, data) {
+    const container = document.getElementById('dynamicFormContainer');
+    const footer    = document.getElementById('modalFooterButtons');
+    container.innerHTML = '';
+    footer.innerHTML    = '';
+
+    const disabledAttr = waLocked ? 'disabled' : '';
+    const lockedStyle  = waLocked ? 'opacity-40 pointer-events-none select-none' : '';
+
+    switch (status) {
+
+        // ────── ANTRIAN ──────
+        case 'antrian':
+            container.innerHTML = `
+                <div class="p-4 bg-gray-900/40 border border-gray-800 rounded-xl text-xs text-gray-400 leading-relaxed">
+                    Perangkat ini berada di antrian kerja Anda. Klik tombol di bawah untuk
+                    memulai proses pengecekan fisik dan diagnosis kerusakan.
+                </div>
+                <input type="hidden" name="kondisi" value="ANTRIAN_TO_PENGECEKAN">
+                <input type="hidden" name="catatan_teknisi" value="Mulai pengecekan dari antrian.">
+            `;
+            footer.innerHTML = `
+                <button type="submit"
+                    class="bg-amber-500 hover:bg-amber-600 text-black font-bold px-5 py-2 rounded-xl text-xs transition">
+                    Mulai Pengecekan
+                </button>
+            `;
+            break;
+
+        // ────── PENGECEKAN ──────
+        case 'pengecekan':
+            container.innerHTML = `
+                <div class="space-y-5 ${lockedStyle}">
+
+                    {{-- Catatan Teknisi --}}
+                    <div>
+                        <label class="text-[10px] uppercase font-bold tracking-wider text-amber-400">
+                            Hasil Diagnosis Teknisi (Wajib)
+                        </label>
+                        <textarea name="catatan_teknisi" required ${disabledAttr} rows="3"
+                            class="w-full bg-[#0b0c0f] border border-gray-800 rounded-xl mt-1.5 p-3 text-xs
+                                    focus:border-amber-500 focus:outline-none text-white resize-none"
+                            placeholder="Tuliskan detail kerusakan fisik / mesin yang ditemukan...">${data.catatan}</textarea>
+                    </div>
+
+                    {{-- Pilih Kondisi --}}
+                    <div>
+                        <span class="text-xs font-bold text-white block mb-3">Pilih Kondisi Kelanjutan Perbaikan</span>
+                        <div class="space-y-2">
+
+                            {{-- Kondisi A --}}
+                            <label class="flex items-start gap-3 p-3 bg-gray-900/30 border border-gray-800 rounded-xl
+                                            cursor-pointer hover:border-orange-500/40 transition has-[:checked]:border-orange-500/50
+                                            has-[:checked]:bg-orange-500/5">
+                                <input type="radio" name="kondisi_pilih" value="A" ${disabledAttr}
+                                    class="mt-0.5 accent-orange-500 shrink-0"
+                                    onchange="onKondisiChange('A')" checked>
+                                <div>
+                                    <p class="text-xs font-bold text-orange-400">
+                                        Kondisi A — Ada Kerusakan Tambahan
+                                    </p>
+                                    <p class="text-[11px] text-gray-500 mt-0.5">
+                                        Kirim rincian harga baru ke WhatsApp pelanggan untuk meminta persetujuan digital.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {{-- Kondisi B --}}
+                            <label class="flex items-start gap-3 p-3 bg-gray-900/30 border border-gray-800 rounded-xl
+                                            cursor-pointer hover:border-blue-500/40 transition has-[:checked]:border-blue-500/50
+                                            has-[:checked]:bg-blue-500/5">
+                                <input type="radio" name="kondisi_pilih" value="B" ${disabledAttr}
+                                    class="mt-0.5 accent-blue-500 shrink-0"
+                                    onchange="onKondisiChange('B')">
+                                <div>
+                                    <p class="text-xs font-bold text-blue-400">
+                                        Kondisi B — Aman / Sesuai Keluhan Awal
+                                    </p>
+                                    <p class="text-[11px] text-gray-500 mt-0.5">
+                                        Tidak ada biaya tambahan. Langsung eksekusi perbaikan.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {{-- Kondisi C --}}
+                            <label class="flex items-start gap-3 p-3 bg-gray-900/30 border border-gray-800 rounded-xl
+                                            cursor-pointer hover:border-sky-500/40 transition has-[:checked]:border-sky-500/50
+                                            has-[:checked]:bg-sky-500/5">
+                                <input type="radio" name="kondisi_pilih" value="C" ${disabledAttr}
+                                    class="mt-0.5 accent-sky-500 shrink-0"
+                                    onchange="onKondisiChange('C')">
+                                <div>
+                                    <p class="text-xs font-bold text-sky-400">
+                                        Kondisi C — Suku Cadang Gudang Kosong (Indent)
+                                    </p>
+                                    <p class="text-[11px] text-gray-500 mt-0.5">
+                                        Kerusakan terdeteksi namun stok komponen habis. Tandai untuk order ke Admin.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {{-- Kondisi D --}}
+                            <label class="flex items-start gap-3 p-3 bg-gray-900/30 border border-red-900/30 rounded-xl
+                                            cursor-pointer hover:border-red-500/40 transition has-[:checked]:border-red-500/50
+                                            has-[:checked]:bg-red-500/5">
+                                <input type="radio" name="kondisi_pilih" value="D" ${disabledAttr}
+                                    class="mt-0.5 accent-red-500 shrink-0"
+                                    onchange="onKondisiChange('D')">
+                                <div>
+                                    <p class="text-xs font-bold text-red-400">
+                                        Kondisi D — Perangkat Rusak Total / Tidak Bisa Diperbaiki
+                                    </p>
+                                    <p class="text-[11px] text-gray-500 mt-0.5">
+                                        Kerusakan permanen. Perangkat dikembalikan ke pelanggan, hanya bayar biaya cek fisik.
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    {{-- Panel Kondisi A: Form Quotation --}}
+                    <div id="panelKondisiA" class="space-y-3 bg-orange-950/10 border border-orange-900/30 p-4 rounded-xl">
+                        <span class="text-xs font-bold text-orange-400 block">Form Estimasi Biaya Tambahan</span>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="col-span-2">
+                                <input type="text" name="nama_part_tambahan" ${disabledAttr}
+                                    class="w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2 text-xs text-white"
+                                    placeholder="Nama Komponen Tambahan">
+                            </div>
+                            <div>
+                                <input type="number" name="harga_part_tambahan" id="hargaPart" ${disabledAttr}
+                                    class="w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2 text-xs text-white"
+                                    placeholder="Harga Satuan" oninput="hitungTotal()">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="number" name="biaya_jasa_tambahan" id="biayaJasa" ${disabledAttr}
+                                class="w-full bg-[#0b0c0f] border border-gray-800 rounded-lg p-2 text-xs text-white"
+                                placeholder="Biaya Jasa Teknisi Tambahan" oninput="hitungTotal()">
+                            <input type="number" name="total_estimasi_baru" id="totalEstimasi" readonly
+                                class="w-full bg-orange-950/30 border border-orange-900/50 rounded-lg p-2 text-xs text-orange-400 font-bold"
+                                placeholder="Total Estimasi Baru (Auto)">
+                        </div>
+                        <input type="hidden" name="kondisi" id="inputKondisiHidden" value="A">
+                    </div>
+
+                    {{-- Panel Kondisi D: Input Komponen Rusak --}}
+                    <div id="panelKondisiD" class="hidden space-y-3 bg-red-950/10 border border-red-900/30 p-4 rounded-xl">
+                        <span class="text-xs font-bold text-red-400 block">Konfirmasi Kerusakan Permanen</span>
+                        <input type="text" name="komponen_rusak" ${disabledAttr}
+                            class="w-full bg-[#0b0c0f] border border-red-900/40 rounded-lg p-2.5 text-xs text-white"
+                            placeholder="Contoh: IC Charger hangus, Motherboard korosi parah">
+                        <p class="text-[11px] text-red-400/70">
+                            Status tiket akan langsung berpindah ke <strong>Siap Diambil</strong>
+                            dan catatan rusak total akan tersimpan otomatis.
+                        </p>
+                    </div>
+
+                </div>
+            `;
+
+            // Default button untuk Kondisi A
+            footer.innerHTML = buildFooterButton('A', waLocked);
+            break;
+
+        // ────── MENUNGGU PART ──────
+        case 'menunggu part':
+            const isApproval = subStatus === 'waiting_approval';
+            const isIndent   = subStatus === 'waiting_indent';
+
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-6 rounded-2xl text-center space-y-3
+                    ${isApproval
+                        ? 'bg-orange-500/5 border border-orange-500/20'
+                        : 'bg-sky-500/5 border border-sky-500/20'}">
+                    <span class="text-3xl">${isApproval ? '⏳' : '📦'}</span>
+                    <h4 class="text-sm font-bold ${isApproval ? 'text-orange-400' : 'text-sky-400'}">
+                        ${isApproval ? 'Menunggu Persetujuan Pelanggan' : 'Menunggu Pengadaan Suku Cadang'}
+                    </h4>
+                    <p class="text-xs text-gray-400 max-w-sm">
+                        ${isApproval
+                            ? 'Link persetujuan digital telah dikirim ke WhatsApp pelanggan. Kartu otomatis berpindah setelah pelanggan merespons.'
+                            : 'Suku cadang yang dibutuhkan sedang dalam proses pemesanan oleh Admin. Tunggu konfirmasi stok masuk.'}
+                    </p>
+                </div>
+            `;
+            footer.innerHTML = `
+                <button type="button" onclick="closeModal()"
+                    class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-xs transition">
+                    Tutup
+                </button>
+            `;
+            break;
+
+        // ────── PENGERJAAN ──────
+        case 'pengerjaan':
+            container.innerHTML = `
+                <div class="space-y-4">
+                    <div class="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-xs text-blue-400">
+                        Pelanggan menyetujui pengerjaan. Selesaikan perbaikan fisik perangkat, lalu pilih suku cadang yang digunakan.
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold tracking-wider text-blue-400">
+                            Suku Cadang Gudang yang Digunakan
+                        </label>
+                        <div class="flex gap-2 mt-1.5">
+                            <select name="id_komponen"
+                                class="flex-1 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2.5 text-xs
+                                        text-white focus:border-blue-500 focus:outline-none">
+                                <option value="">-- Pilih Komponen (Potong Stok Otomatis) --</option>
+                                {{-- Opsi ini idealnya diload via AJAX dari endpoint /api/spareparts --}}
+                            </select>
+                            <input type="number" name="jumlah_part" value="1" min="1"
+                                class="w-16 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2
+                                        text-center text-xs text-white">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500">
+                            Catatan Akhir Perbaikan
+                        </label>
+                        <textarea name="catatan_selesai" rows="2"
+                            class="w-full bg-[#0b0c0f] border border-gray-800 rounded-xl mt-1.5 p-3
+                                    text-xs text-white focus:border-blue-500 focus:outline-none resize-none"
+                            placeholder="Contoh: Berhasil ganti IC Power dan re-pasta thermal..."></textarea>
+                    </div>
+                    <input type="hidden" name="kondisi" value="B">
+                    <input type="hidden" name="status"  value="quality control">
+                </div>
+            `;
+            footer.innerHTML = `
+                <button type="submit"
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-2 rounded-xl text-xs transition">
+                    Kirim ke Quality Control
+                </button>
+            `;
+            break;
+
+        // ────── QUALITY CONTROL ──────
+        case 'quality control':
+            container.innerHTML = `
+                <div class="space-y-4">
+                    <span class="text-xs font-bold text-purple-400 block">Checklist Pengujian Layanan (QC)</span>
+                    <div class="grid grid-cols-2 gap-3 bg-[#14161a] p-4 rounded-xl border border-gray-800/60 text-xs">
+                        <label class="flex items-center gap-2 text-gray-300 cursor-pointer">
+                            <input type="checkbox" required name="qc_power"
+                                class="rounded bg-transparent border-gray-800 accent-purple-500">
+                            Tes Hidup / Mati Daya
+                        </label>
+                        <label class="flex items-center gap-2 text-gray-300 cursor-pointer">
+                            <input type="checkbox" required name="qc_display"
+                                class="rounded bg-transparent border-gray-800 accent-purple-500">
+                            Tes Fungsi Layar Display
+                        </label>
+                        <label class="flex items-center gap-2 text-gray-300 cursor-pointer">
+                            <input type="checkbox" required name="qc_suhu"
+                                class="rounded bg-transparent border-gray-800 accent-purple-500">
+                            Tes Suhu Kerja Alat
+                        </label>
+                        <label class="flex items-center gap-2 text-gray-300 cursor-pointer">
+                            <input type="checkbox" required name="qc_baterai"
+                                class="rounded bg-transparent border-gray-800 accent-purple-500">
+                            Tes Pengisian Baterai
+                        </label>
+                    </div>
+                    <input type="hidden" name="kondisi" value="B">
+                    <input type="hidden" name="status"  value="siap diambil">
+                </div>
+            `;
+            footer.innerHTML = `
+                <button type="submit"
+                    class="bg-purple-500 hover:bg-purple-600 text-white font-bold px-5 py-2 rounded-xl text-xs transition">
+                    Lulus QC dan Siap Diambil
+                </button>
+            `;
+            break;
+
+        // ────── SIAP DIAMBIL & SELESAI ──────
+        case 'siap diambil':
+        case 'selesai':
+            container.innerHTML = `
+                <div class="p-4 bg-gray-900/50 border border-gray-800 rounded-xl text-xs text-gray-500 space-y-2 leading-relaxed">
+                    <p>Perangkat ini sudah selesai dari sisi teknis dan diserahkan ke meja administrasi kasir.</p>
+                    <p class="text-[11px]">Riwayat transaksi, data sparepart terpakai, dan nota pembayaran dikelola oleh Admin Kasir.</p>
+                </div>
+            `;
+            footer.innerHTML = `
+                <button type="button" onclick="closeModal()"
+                    class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-xs transition">
+                    Tutup
+                </button>
+            `;
+            break;
+    }
+}
+
+// ── Build Footer Button sesuai kondisi yang dipilih ───────────────────
+function buildFooterButton(kondisi, locked) {
+    if (locked) return `
+        <span class="text-xs text-orange-400/60 italic">Form terkunci saat menunggu respons pelanggan.</span>
+    `;
+
+    const buttons = {
+        'A': `<button type="submit" class="bg-orange-500 hover:bg-orange-600 text-black font-bold px-5 py-2 rounded-xl text-xs transition">
+                Kirim Quotation via WA
+            </button>`,
+        'B': `<button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-2 rounded-xl text-xs transition">
+                Mulai Pengerjaan
+            </button>`,
+        'C': `<button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white font-bold px-5 py-2 rounded-xl text-xs transition">
+                Laporkan Part Kosong ke Admin
+            </button>`,
+        'D': `<button type="submit" class="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded-xl text-xs transition">
+                Tandai Tidak Bisa Diperbaiki
+            </button>`,
+    };
+    return buttons[kondisi] || '';
+}
+
+// ── Saat radio kondisi berubah ────────────────────────────────────────
+function onKondisiChange(kondisi) {
+    const panelA  = document.getElementById('panelKondisiA');
+    const panelD  = document.getElementById('panelKondisiD');
+    const hidden  = document.getElementById('inputKondisiHidden');
+    const footer  = document.getElementById('modalFooterButtons');
+
+    panelA.classList.toggle('hidden', kondisi !== 'A');
+    panelD.classList.toggle('hidden', kondisi !== 'D');
+
+    if (hidden) hidden.value = kondisi;
+    footer.innerHTML = buildFooterButton(kondisi, false);
+}
+
+// ── Auto-hitung total estimasi Kondisi A ─────────────────────────────
+function hitungTotal() {
+    const part  = parseInt(document.getElementById('hargaPart')?.value)  || 0;
+    const jasa  = parseInt(document.getElementById('biayaJasa')?.value)  || 0;
+    const total = document.getElementById('totalEstimasi');
+    if (total) total.value = part + jasa;
+}
+
+// ── Tutup modal ───────────────────────────────────────────────────────
+function closeModal() {
+    document.getElementById('ticketDetailModal').classList.add('hidden');
+}
+
+function handleBackdropClick(e) {
+    if (e.target === document.getElementById('ticketDetailModal')) closeModal();
+}
+</script>
+
 @endsection
