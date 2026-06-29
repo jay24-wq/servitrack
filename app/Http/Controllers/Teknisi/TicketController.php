@@ -139,12 +139,16 @@ class TicketController extends Controller
             'C' => (function () use ($request, $service_ticket) {
                 $request->validate([
                     'catatan_teknisi' => ['required', 'string', 'max:2000'],
+                    'nama_komponen_indent' => ['required', 'string', 'max:255'],
                 ]);
+
+                $catatanLengkap = $request->catatan_teknisi
+                    . "\n\n[INDENT] Komponen yang dibutuhkan: " . $request->nama_komponen_indent;
 
                 $service_ticket->update([
                     'status'          => 'menunggu part',
                     'sub_status'      => 'waiting_indent',
-                    'catatan_teknisi' => $request->catatan_teknisi,
+                    'catatan_teknisi' => $catatanLengkap,
                 ]);
             })(),
 
