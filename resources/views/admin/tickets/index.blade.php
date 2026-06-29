@@ -7,7 +7,7 @@
 
     {{-- Page Header --}}
     <div>
-        <h1 class="text-4xl font-bold text-white tracking-tight">Device Intake</h1>
+        <h1 class="text-4xl font-bold text-white tracking-tight">Form Frontdesk</h1>
         <p class="text-gray-400 mt-1">Daftarkan perangkat masuk dan dokumentasikan kondisi awalnya.</p>
     </div>
 

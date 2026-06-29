@@ -85,6 +85,12 @@
                     <i class="fa-solid fa-ticket w-5"></i>
                     <span>Form Frontdesk</span>
                 </a>
+                <a href="{{ route('admin.payment') }}"
+                class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition
+                {{ request()->routeIs('admin.payment*') ? 'bg-gradient-to-r from-indigo-600/10 to-transparent text-white border-l-2 border-indigo-500 rounded-r-lg' : 'text-gray-500 hover:text-gray-300' }}">
+                    <i class="fa-regular fa-money-bill-1 w-5"></i>
+                    <span>Payments</span>
+                </a>
                 @endif
             </nav>
         </div>

@@ -42,6 +42,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('/tickets/create', [AdminTicketController::class, 'create'])->name('tickets.create');
             Route::post('/tickets', [AdminTicketController::class, 'store'])->name('tickets.store');
+            Route::get('/payment', [PaymentController::class, 'index'])->name('payment');
+            Route::get('/payment/search', [PaymentController::class, 'search'])->name('payment.search');
+            Route::post('/payment', [PaymentController::class, 'store'])->name('payment.store');
         });
     });
 
@@ -57,9 +60,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/staff', [StaffController::class, 'store'])->name('staff.store');
             Route::put('/staff/{user}', [StaffController::class, 'update'])->name('staff.update');
             Route::patch('/staff/{user}/toggle', [StaffController::class, 'toggleActive'])->name('staff.toggle');
-            Route::get('/payment', [PaymentController::class, 'index'])->name('payment');
-            Route::get('/payment/search', [PaymentController::class, 'search'])->name('payment.search');
-            Route::post('/payment', [PaymentController::class, 'store'])->name('payment.store');
             Route::get('/reports', [AdminTicketController::class, 'reports'])->name('reports');
         });
     });
