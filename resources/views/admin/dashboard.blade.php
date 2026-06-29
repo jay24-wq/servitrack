@@ -41,7 +41,57 @@
             </div>
         </div>
 
-        {{-- Card 2: Selesai Hari Ini --}}
+        {{-- Card 2: Menunggu Part (BARU) --}}
+        <a href="{{ route('admin.queue') }}?status=menunggu+part"
+            class="bg-[#14161a] border rounded-xl p-6 space-y-4 block transition-all duration-200 hover:border-orange-500/40 hover:bg-orange-500/5
+                {{ $stats['menunggu_part'] > 0 ? 'border-orange-900/60 bg-gradient-to-br from-orange-950/20 to-transparent' : 'border-gray-800' }}">
+            <div class="flex items-center justify-between">
+                <div class="p-2 rounded-lg border {{ $stats['menunggu_part'] > 0 ? 'bg-orange-500/10 border-orange-500/20' : 'bg-gray-800/50 border-gray-800' }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 {{ $stats['menunggu_part'] > 0 ? 'text-orange-400' : 'text-gray-600' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                    </svg>
+                </div>
+                @if($stats['menunggu_part'] > 0)
+                <span class="text-[10px] font-bold uppercase tracking-wider text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-1 rounded animate-pulse">
+                    Butuh Tindakan
+                </span>
+                @endif
+            </div>
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-wider {{ $stats['menunggu_part'] > 0 ? 'text-orange-400/70' : 'text-gray-500' }} mb-1">
+                    Menunggu Part
+                </p>
+                <div class="flex items-end gap-2">
+                    <span class="text-4xl font-bold {{ $stats['menunggu_part'] > 0 ? 'text-orange-400' : 'text-white' }}">
+                        {{ $stats['menunggu_part'] }}
+                    </span>
+                    <span class="text-sm text-gray-500 mb-1">Tiket tertunda</span>
+                </div>
+            </div>
+
+            {{-- Sub-breakdown: approval vs indent --}}
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-orange-400 {{ $stats['menunggu_approval'] > 0 ? 'animate-pulse' : 'opacity-30' }}"></span>
+                    <span class="text-[10px] text-gray-500">
+                        <span class="{{ $stats['menunggu_approval'] > 0 ? 'text-orange-400 font-bold' : '' }}">
+                            {{ $stats['menunggu_approval'] }}
+                        </span> approval WA
+                    </span>
+                </div>
+                <span class="text-gray-700">·</span>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-sky-400 {{ $stats['menunggu_indent'] > 0 ? '' : 'opacity-30' }}"></span>
+                    <span class="text-[10px] text-gray-500">
+                        <span class="{{ $stats['menunggu_indent'] > 0 ? 'text-sky-400 font-bold' : '' }}">
+                            {{ $stats['menunggu_indent'] }}
+                        </span> indent part
+                    </span>
+                </div>
+            </div>
+        </a>
+
+        {{-- Card 3: Selesai Hari Ini --}}
         <div class="bg-[#14161a] border border-gray-800 rounded-xl p-6 space-y-4">
             <div class="flex items-center justify-between">
                 <div class="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
@@ -65,40 +115,6 @@
             </div>
             <div class="w-full bg-gray-800 rounded-full h-1">
                 <div class="bg-emerald-500 h-1 rounded-full" style="width: {{ $stats['total'] > 0 ? ($stats['selesai_hari_ini'] / max($stats['total'], 1)) * 100 : 0 }}%"></div>
-            </div>
-        </div>
-
-        {{-- Card 3: Pendapatan Harian --}}
-        <div class="bg-[#14161a] border border-gray-800 rounded-xl p-6 space-y-4">
-            <div class="flex items-center justify-between">
-                <div class="p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                </div>
-
-                @if($stats['pendapatan_hari_ini'] >= $stats['target_pendapatan'])
-                <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded">
-                    Target Tercapai
-                </span>
-                @else
-                <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-500/10 border border-gray-500/20 px-2 py-1 rounded">
-                    Belum Tercapai
-                </span>
-                @endif
-            </div>
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Pendapatan Harian</p>
-                <div class="flex items-end gap-2">
-                    <span class="text-4xl font-bold text-white">Rp {{ number_format($stats['pendapatan_hari_ini'] / 1000, 0, ',', '.') }}</span>
-                    <span class="text-sm text-gray-500 mb-1">IDR</span>
-                </div>
-            </div>
-            @php
-                $progress = min(100, round(($stats['pendapatan_hari_ini'] / $stats['target_pendapatan']) * 100));
-            @endphp
-            <div class="w-full bg-gray-800 rounded-full h-1">
-                <div class="bg-amber-500 h-1 rounded-full" style="width: {{ $progress }}%;"></div>
             </div>
         </div>
     </div>
