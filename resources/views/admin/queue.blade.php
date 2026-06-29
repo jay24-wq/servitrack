@@ -42,14 +42,30 @@
             </div>
         </div>
 
-        {{-- Efficiency Rate --}}
-        <div class="bg-[#14161a] border border-gray-800 rounded-xl p-5">
-            <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Efficiency Rate</p>
-            <p class="text-4xl font-bold text-white mt-2">{{ $stats['efficiency_rate'] }}%</p>
-            <div class="mt-3 w-full bg-gray-800 rounded-full h-1">
-                <div class="bg-blue-500 h-1 rounded-full" style="width: {{ $stats['efficiency_rate'] }}%"></div>
+        {{-- Menunggu Part (BARU) --}}
+        <a href="?status=menunggu+part"
+            class="bg-[#14161a] rounded-xl p-5 relative overflow-hidden block transition
+                {{ $stats['menunggu_part'] > 0 ? 'border border-orange-900/50' : 'border border-gray-800' }}">
+            <div class="relative z-10">
+                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Menunggu Part</p>
+                <p class="text-4xl font-bold {{ $stats['menunggu_part'] > 0 ? 'text-orange-400' : 'text-white' }} mt-2">
+                    {{ $stats['menunggu_part'] }}
+                </p>
+                <div class="flex flex-col gap-1 mt-2">
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-orange-400/70">
+                        {{ $stats['menunggu_approval'] }} Approval WA
+                    </p>
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-sky-400/70">
+                        {{ $stats['menunggu_indent'] }} Indent Part
+                    </p>
+                </div>
             </div>
-        </div>
+            <div class="absolute -right-4 -bottom-4 opacity-5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-28 w-28 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                </svg>
+            </div>
+        </a>
 
         {{-- Completed Today --}}
         <div class="bg-[#14161a] border border-gray-800 rounded-xl p-5">
