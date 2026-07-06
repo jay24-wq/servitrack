@@ -10,12 +10,15 @@ class Payment extends Model
         'service_ticket_id',
         'biaya_sparepart',
         'biaya_jasa',
-        'total',
         'metode',
         'bank',
         'status',
         'tanggal_bayar',
         'catatan',
+    ];
+
+    protected $casts = [
+        'tanggal_bayar' => 'datetime',
     ];
 
     public function ticket()

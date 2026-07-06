@@ -10,6 +10,7 @@ use App\Models\Sparepart;
 use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class TicketController extends Controller
 {
@@ -93,7 +94,7 @@ class TicketController extends Controller
 
     public function show(ServiceTicket $ticket)
     {
-        $ticket->load('user', 'tasks');
+        $ticket->load(['user', 'tasks', 'sparepartUsages.sparepart']);
         return view('admin.tickets.show', compact('ticket'));
     }
 

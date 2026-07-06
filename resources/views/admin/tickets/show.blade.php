@@ -150,6 +150,62 @@
                 </div>
             </div>
 
+            {{-- Sparepart yang Digunakan --}}
+            <div class="bg-[#14161a] border border-gray-800 rounded-xl overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Sparepart Digunakan</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Komponen yang dipakai teknisi dalam pengerjaan ini.</p>
+                    </div>
+                    @if($ticket->sparepartUsages->count() > 0)
+                    <span class="text-xs font-bold text-white bg-gray-800 border border-gray-700 px-2.5 py-1 rounded-lg">
+                        {{ $ticket->sparepartUsages->count() }} item
+                    </span>
+                    @endif
+                </div>
+
+                @if($ticket->sparepartUsages->count() > 0)
+                <div class="divide-y divide-gray-800/60">
+                    @foreach($ticket->sparepartUsages as $usage)
+                    <div class="px-6 py-4 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-center justify-center shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-semibold text-white">{{ $usage->sparepart->nama }}</p>
+                                <p class="text-[11px] text-gray-500 mt-0.5">
+                                    {{ $usage->jumlah_digunakan }} unit × Rp {{ number_format($usage->sparepart->harga_satuan, 0, ',', '.') }}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-bold text-white">
+                                Rp {{ number_format($usage->total_harga, 0, ',', '.') }}
+                            </p>
+                            <p class="text-[10px] text-gray-600 mt-0.5">snapshot harga</p>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+
+                {{-- Total biaya sparepart --}}
+                <div class="px-6 py-4 border-t border-gray-800 bg-gray-900/20 flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Total Biaya Sparepart</span>
+                    <span class="text-sm font-bold text-white">
+                        Rp {{ number_format($ticket->sparepartUsages->sum('total_harga'), 0, ',', '.') }}
+                    </span>
+                </div>
+
+                @else
+                <div class="px-6 py-10 text-center">
+                    <p class="text-sm text-gray-600">Belum ada sparepart yang dicatat untuk tiket ini.</p>
+                </div>
+                @endif
+            </div>
         </div>
 
         {{-- KOLOM KANAN: Status + Teknisi + Biaya --}}

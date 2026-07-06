@@ -42,4 +42,9 @@ class ServiceTicket extends Model
     {
         return $this->hasOne(Payment::class);
     }
+
+    public function sparepartUsages()
+    {
+        return $this->hasMany(SparepartUsage::class);
+    }
 }

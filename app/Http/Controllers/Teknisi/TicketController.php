@@ -124,15 +124,59 @@ class TicketController extends Controller
 
             // ── KONDISI B ──
             'B' => (function () use ($request, $service_ticket) {
-                $request->validate([
-                    'catatan_teknisi' => ['required', 'string', 'max:2000'],
-                ]);
+                if ($service_ticket->status === 'pengecekan') {
+                    $request->validate([
+                        'catatan_teknisi' => ['required', 'string', 'max:2000'],
+                    ]);
 
-                $service_ticket->update([
-                    'status'          => 'pengerjaan',
-                    'sub_status'      => null,
-                    'catatan_teknisi' => $request->catatan_teknisi,
-                ]);
+                    $service_ticket->update([
+                        'status'          => 'pengerjaan',
+                        'sub_status'      => null,
+                        'catatan_teknisi' => $request->catatan_teknisi,
+                    ]);
+
+                    return;
+                }
+
+                if ($service_ticket->status === 'pengerjaan') {
+                    $request->validate([
+                        'catatan_selesai' => ['required', 'string', 'max:2000'],
+                        'id_komponen'     => ['nullable', 'exists:spareparts,id'],
+                        'jumlah_part'     => ['nullable', 'integer', 'min:1'],
+                    ]);
+
+                    if ($request->filled('id_komponen')) {
+                        $sparepart = \App\Models\Sparepart::findOrFail($request->id_komponen);
+
+                        if ($sparepart->sparepart_stock < $request->jumlah_part) {
+                            throw \Illuminate\Validation\ValidationException::withMessages([
+                                'id_komponen' => "Stok {$sparepart->nama} tidak mencukupi. Sisa stok: {$sparepart->sparepart_stock} unit.",
+                            ]);
+                        }
+
+                        \App\Models\SparepartUsage::create ([
+                            'service_ticket_id' => $service_ticket->id,
+                            'sparepart_id'      => $sparepart->id,
+                            'jumlah_digunakan'  => $request->jumlah_part,
+                            'total_harga'       => $sparepart->harga_satuan * $request->jumlah_part,
+                        ]);
+
+                        $sparepart->decrement('sparepart_stock', $request->jumlah_part);
+                    }
+                    $service_ticket->update([
+                        'status'          => 'quality control',
+                        'sub_status'      => null,
+                        'catatan_teknisi' => $service_ticket->catatan_teknisi . "\n\n[SELESAI] " . $request->catatan_selesai,
+                    ]);
+                    return;
+                }
+
+                if ($service_ticket->status === 'quality control') {
+                    $service_ticket->update([
+                        'status'     => 'siap diambil',
+                        'sub_status' => null,
+                    ]);
+                }
             })(),
 
             // ── KONDISI C ──
@@ -174,5 +218,34 @@ class TicketController extends Controller
         };
 
         return back()->with('success', 'Tiket berhasil diperbarui.');
+    }
+
+    public function storeSparepartUsage(Request $request, ServiceTicket $ticket)
+    {
+        if ($ticket->status !== 'pengerjaan') {
+            return back()->with('error', 'Sparepart hanya bisa ditambahkan saat tiket berstatus pengerjaan.');
+        }
+
+        $request->validate([
+            'id_komponen'  => ['required', 'exists:spareparts,id'],
+            'jumlah_part'  => ['required', 'integer', 'min:1'],
+        ]);
+
+        $sparepart = \App\Models\Sparepart::findOrFail($request->id_komponen);
+
+        if ($sparepart->sparepart_stock < $request->jumlah_part) {
+            return back()->with('error', "Stok {$sparepart->nama} tidak mencukupi. Sisa: {$sparepart->sparepart_stock} unit.");
+        }
+
+        \App\Models\SparepartUsage::create([
+            'service_ticket_id' => $ticket->id,
+            'sparepart_id'      => $sparepart->id,
+            'jumlah_digunakan'  => $request->jumlah_part,
+            'total_harga'       => $sparepart->harga_satuan * $request->jumlah_part,
+        ]);
+
+        $sparepart->decrement('sparepart_stock', $request->jumlah_part);
+
+        return back()->with('success', "{$sparepart->nama} berhasil ditambahkan ke pemakaian tiket ini.");
     }
 }

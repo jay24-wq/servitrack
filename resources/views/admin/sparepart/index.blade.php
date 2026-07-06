@@ -118,7 +118,7 @@
             </div>
 
             @if(request('search') || request('merek'))
-            <a href="{{ route('spareparts.index') }}" class="text-xs text-gray-500 hover:text-red-400 flex items-center whitespace-nowrap">
+            <a href="{{ route('admin.sparepart.index') }}" class="text-xs text-gray-500 hover:text-red-400 flex items-center whitespace-nowrap">
                 Clear Filter
             </a>
             @endif

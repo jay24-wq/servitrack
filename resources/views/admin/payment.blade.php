@@ -56,7 +56,7 @@
                 <div class="flex items-start justify-between gap-3">
                     <div>
                         <p class="text-[10px] font-bold uppercase tracking-widest text-gray-500">Ticket ID</p>
-                        <p class="text-2xl font-bold text-white mt-1 font-mono">{{ $ticket->kode_servis }}</p>
+                        <p class="text-xl font-bold text-white mt-1 font-mono">{{ $ticket->kode_servis }}</p>
                     </div>
                     @php
                         $statusConfig = [
@@ -155,47 +155,66 @@
                     {{-- Rincian Biaya --}}
                     <div class="px-6 py-5 space-y-4">
 
-                        {{-- Biaya Sparepart --}}
-                        <div class="flex items-start justify-between gap-4 pb-4 border-b border-gray-800/60">
-                            <div class="flex-1">
-                                <p class="text-sm font-semibold text-white">Biaya Suku Cadang</p>
-                                <p class="text-xs text-gray-500 mt-0.5">{{ $ticket->device_name }} {{ $ticket->device_brand }}</p>
+                        {{-- Breakdown Sparepart yang Dipakai --}}
+                        @if($ticket->sparepartUsages->count() > 0)
+                        <div class="space-y-2 pb-4 border-b border-gray-800/60">
+                            <p class="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                Rincian Suku Cadang
+                            </p>
+                            @foreach($ticket->sparepartUsages as $usage)
+                            <div class="flex items-center justify-between py-2 px-3 bg-gray-900/40 rounded-lg">
+                                <div>
+                                    <p class="text-xs font-semibold text-white">{{ $usage->sparepart->nama }}</p>
+                                    <p class="text-[11px] text-gray-500 mt-0.5">
+                                        {{ $usage->jumlah_digunakan }} unit × Rp {{ number_format($usage->sparepart->harga_satuan, 0, ',', '.') }}
+                                    </p>
+                                </div>
+                                <p class="text-xs font-bold text-white">
+                                    Rp {{ number_format($usage->total_harga, 0, ',', '.') }}
+                                </p>
                             </div>
-                            <div class="text-right shrink-0">
-                                <p class="text-[10px] text-gray-600 mb-1">Rp</p>
-                                <input type="number" name="biaya_sparepart"
-                                    value="{{ $ticket->payment?->biaya_sparepart ?? 0 }}"
-                                    min="0" step="1000"
-                                    id="input-sparepart"
-                                    class="w-36 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white text-right focus:outline-none focus:border-blue-500 transition"
-                                    oninput="hitungTotal()">
+                            @endforeach
+                        </div>
+                        @endif
+
+                        {{-- Biaya Sparepart (read-only, dari SUM usage) --}}
+                        <div class="flex items-center justify-between pb-4 border-b border-gray-800/60">
+                            <div>
+                                <p class="text-sm font-semibold text-white">Biaya Suku Cadang</p>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    {{ $ticket->sparepartUsages->count() > 0 ? $ticket->sparepartUsages->count() . ' item komponen' : 'Tidak ada komponen yang digunakan' }}
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm font-bold text-white">
+                                    Rp {{ number_format($biayaSparepart, 0, ',', '.') }}
+                                </p>
+                                {{-- Hidden input untuk dikirim ke backend --}}
+                                <input type="hidden" name="biaya_sparepart" value="{{ $biayaSparepart }}">
                             </div>
                         </div>
 
                         {{-- Biaya Jasa --}}
-                        <div class="flex items-start justify-between gap-4 pb-4 border-b border-gray-800/60">
-                            <div class="flex-1">
+                        <div class="flex items-center justify-between pb-4 border-b border-gray-800/60">
+                            <div>
                                 <p class="text-sm font-semibold text-white">Biaya Jasa Teknisi</p>
                                 <p class="text-xs text-gray-500 mt-0.5">
                                     {{ $ticket->user ? $ticket->user->name : 'Teknisi belum ditugaskan' }}
+                                    <span class="text-gray-600 ml-1">— Tarif tetap</span>
                                 </p>
                             </div>
-                            <div class="text-right shrink-0">
-                                <p class="text-[10px] text-gray-600 mb-1">Rp</p>
-                                <input type="number" name="biaya_jasa"
-                                    value="{{ $ticket->payment?->biaya_jasa ?? 0 }}"
-                                    min="0" step="1000"
-                                    id="input-jasa"
-                                    class="w-36 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white text-right focus:outline-none focus:border-blue-500 transition"
-                                    oninput="hitungTotal()">
+                            <div class="text-right">
+                                <p class="text-sm font-bold text-white">Rp 50.000</p>
+                                <input type="hidden" name="biaya_jasa" value="50000">
                             </div>
                         </div>
 
                         {{-- Total --}}
+                        @php $totalBayar = $biayaSparepart + 50000; @endphp
                         <div class="bg-gray-900/60 border border-gray-800 rounded-xl px-6 py-5 flex items-center justify-between">
                             <p class="text-[10px] font-bold uppercase tracking-widest text-gray-500">Total Pembayaran</p>
-                            <p class="text-3xl font-bold text-white" id="display-total">
-                                Rp {{ number_format(($ticket->payment?->biaya_sparepart ?? 0) + ($ticket->payment?->biaya_jasa ?? 0), 0, ',', '.') }}
+                            <p class="text-3xl font-bold text-white">
+                                Rp {{ number_format($totalBayar, 0, ',', '.') }}
                             </p>
                         </div>
 

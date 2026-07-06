@@ -14,4 +14,9 @@ class Sparepart extends Model
         'sparepart_stock',
         'stok_minimum'
     ];
+
+    public function usages()
+    {
+        return $this->hasMany(SparepartUsage::class);
+    }
 }

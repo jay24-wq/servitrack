@@ -614,18 +614,41 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
                         <label class="text-[10px] uppercase font-bold tracking-wider text-blue-400">
                             Suku Cadang Gudang yang Digunakan
                         </label>
+
+                        {{-- Loading state --}}
+                        <div id="sparepartLoadingState"
+                            class="flex items-center gap-2 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2.5 text-xs text-gray-500 mt-1.5">
+                            <svg class="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            Memuat daftar komponen...
+                        </div>
+
                         <div class="flex gap-2 mt-1.5">
-                            <select name="id_komponen"
-                                class="flex-1 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2.5 text-xs
+                            <select name="id_komponen" id="selectSparepart"
+                                class="hidden flex-1 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2.5 text-xs
                                         text-white focus:border-blue-500 focus:outline-none">
                                 <option value="">-- Pilih Komponen (Potong Stok Otomatis) --</option>
-                                {{-- Opsi ini idealnya diload via AJAX dari endpoint /api/spareparts --}}
                             </select>
                             <input type="number" name="jumlah_part" value="1" min="1"
                                 class="w-16 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2
                                         text-center text-xs text-white">
                         </div>
                     </div>
+
+                    {{-- Info stok & harga setelah pilih --}}
+                    <div id="sparepartInfo" class="hidden grid grid-cols-2 gap-2">
+                        <div class="bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5">
+                            <p class="text-[10px] text-gray-500 mb-0.5">Sisa Stok</p>
+                            <p id="infoStok" class="text-xs font-bold text-white">-</p>
+                        </div>
+                        <div class="bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5">
+                            <p class="text-[10px] text-gray-500 mb-0.5">Harga Satuan</p>
+                            <p id="infoHarga" class="text-xs font-bold text-blue-400">-</p>
+                        </div>
+                    </div>
+
                     <div>
                         <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500">
                             Catatan Akhir Perbaikan
@@ -645,6 +668,7 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
                     Kirim ke Quality Control
                 </button>
             `;
+            fetchSpareparts();
             break;
 
         // ────── QUALITY CONTROL ──────

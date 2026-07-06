@@ -44,7 +44,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/tickets', [AdminTicketController::class, 'store'])->name('tickets.store');
             Route::get('/payment', [PaymentController::class, 'index'])->name('payment');
             Route::get('/payment/search', [PaymentController::class, 'search'])->name('payment.search');
-            Route::post('/payment', [PaymentController::class, 'store'])->name('payment.store');
+            Route::post('/payment/store', [PaymentController::class, 'store'])->name('payment.store');
+            Route::get('/payment/nota/{ticket}', [PaymentController::class, 'nota'])->name('payment.nota');
         });
     });
 
@@ -76,6 +77,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::patch('/tickets/{service_ticket}/update-detail', [TeknisiTicketController::class, 'updateDetail'])->name('tickets.updateDetail');
             Route::get('/api/spareparts', [StokKomponenController::class, 'apiList'])->name('api.spareparts');
             Route::get('/stok', [StokKomponenController::class, 'index'])->name('stok.index');
+            Route::post('/tickets/{ticket}/sparepart-usage', [TeknisiTicketController::class, 'storeSparepartUsage'])->name('tickets.sparepartUsage');
             // Halaman kerjaan teknisi lainnya (Buka jika sudah membuat)
             // Route::post('/tickets/{id}/update-status', [TeknisiController::class, 'updateStatus']);
         });

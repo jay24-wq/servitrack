@@ -7,45 +7,43 @@ use App\Models\Payment;
 use App\Models\ServiceTicket;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
     public function index()
     {
-        // Hitung pendapatan hari ini dari pembayaran yang sudah lunas
-        $pendapatanHariIni = Payment::whereDate('tanggal_bayar', today())
-            ->where('status', 'lunas')
-            ->sum('total');
-
-        // Tentukan target pendapatan harian (misalnya Rp500.000)
-        $targetPendapatan = 500000;
-
-        // Buat array statistik
-        $stats = [
-            'pendapatan_hari_ini' => $pendapatanHariIni,
-            'target_pendapatan'   => $targetPendapatan,
-            'total'               => Payment::count(),
-        ];
-
-        return view('admin.payment', compact('stats'));
+        return view('admin.payment', [
+            'ticket' => null,
+        ]);
     }
 
     public function search(Request $request)
     {
+        $kode   = trim($request->kode);
         $ticket = null;
         $error  = null;
 
-        if ($request->filled('kode')) {
-            $ticket = ServiceTicket::with('user', 'tasks', 'payment')
-                ->where('kode_servis', strtoupper(trim($request->kode)))
-                ->first();
+        if ($kode) {
+            $ticket = ServiceTicket::with([
+                'user',
+                'payment',
+                'sparepartUsages.sparepart',
+            ])->where('kode_servis', $kode)->first();
 
             if (!$ticket) {
-                $error = 'Tiket dengan kode "' . $request->kode . '" tidak ditemukan.';
+                $error = "Tiket dengan kode \"{$kode}\" tidak ditemukan.";
+            } elseif (!in_array($ticket->status, ['siap diambil', 'selesai'])) {
+                $error = "Tiket ini belum selesai dikerjakan (status: {$ticket->status}). Pembayaran hanya bisa diproses untuk tiket berstatus Siap Diambil.";
+                $ticket = null;
             }
         }
 
-        return view('admin.payment', compact('ticket', 'error'));
+        $biayaSparepart = $ticket
+            ? $ticket->sparepartUsages->sum('total_harga')
+            : 0;
+
+        return view('admin.payment', compact('ticket', 'error', 'biayaSparepart'));
     }
 
     public function store(Request $request)
@@ -53,38 +51,53 @@ class PaymentController extends Controller
         $request->validate([
             'service_ticket_id' => 'required|exists:service_tickets,id',
             'biaya_sparepart'   => 'required|integer|min:0',
-            'biaya_jasa'        => 'required|integer|min:0',
             'metode'            => 'required|in:tunai,qris,transfer',
             'bank'              => 'required_if:metode,transfer|in:BCA,Mandiri,BNI,BRI',
             'catatan'           => 'nullable|string',
         ]);
 
-        $total = $request->biaya_sparepart + $request->biaya_jasa;
+        $ticket = ServiceTicket::with('sparepartUsages')->findOrFail($request->service_ticket_id);
 
-        DB::transaction(function () use ($request, $total) {
+        if ($ticket->payment && $ticket->payment->status === 'lunas') {
+            return back()->with('error', 'Tiket ini sudah dibayar sebelumnya.');
+        }
+
+        $biayaSparepart = $ticket->sparepartUsages->sum('total_harga');
+        $biayaJasa      = 50000;
+        $total          = $biayaSparepart + $biayaJasa;
+
         Payment::updateOrCreate(
-            ['service_ticket_id' => $request->service_ticket_id],
+            ['service_ticket_id' => $ticket->id],
             [
-                'biaya_sparepart' => $request->biaya_sparepart,
-                'biaya_jasa'      => $request->biaya_jasa,
-                'total'           => $total,
+                'biaya_sparepart' => $biayaSparepart,
+                'biaya_jasa'      => $biayaJasa,
                 'metode'          => $request->metode,
-                'bank'            => $request->bank,
+                'bank'            => $request->metode === 'transfer' ? strtoupper($request->bank_name) : null,
                 'status'          => 'lunas',
-                'tanggal_bayar'   => now(),
+                'tanggal_bayar'   => Carbon::now(),
                 'catatan'         => $request->catatan,
             ]
         );
 
-        ServiceTicket::find($request->service_ticket_id)
-            ->update([
-                'total_biaya' => $total,
-                'status'      => 'selesai',
-            ]);
-        });
+        $ticket->update([
+            'status'     => 'selesai',
+            'sub_status' => null,
+        ]);
 
-        $ticket = ServiceTicket::find($request->service_ticket_id);
-        return redirect()->route('admin.payment')
-            ->with('success', 'Pembayaran tiket ' . $ticket->kode_servis . ' berhasil diproses!');
+        return redirect()
+            ->route('admin.payment.nota', $ticket->id)
+            ->with('success', 'Pembayaran berhasil diproses!');
+    }
+
+    public function nota(ServiceTicket $ticket)
+    {
+        $ticket->load(['user', 'payment', 'sparepartUsages.sparepart']);
+
+        if (!$ticket->payment) {
+            return redirect()->route('admin.payment.index')
+                ->with('error', 'Pembayaran untuk tiket ini belum ditemukan.');
+        }
+
+        return view('admin.payment-nota', compact('ticket'));
     }
 }
