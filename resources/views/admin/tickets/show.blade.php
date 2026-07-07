@@ -70,6 +70,29 @@
                 </div>
             </div>
 
+            {{-- Galeri Foto Dokumentasi --}}
+            <div class="bg-[#14161a] border border-gray-800 rounded-xl p-6 space-y-4">
+                <div class="flex items-center space-x-2 border-b border-gray-800 pb-3">
+                    <i class="fa-regular fa-image text-gray-500"></i>
+                    <span class="text-white font-semibold text-xs uppercase tracking-wider">Foto Dokumentasi</span>
+                </div>
+
+                @if($ticket->photos->count())
+                    <div class="flex flex-wrap gap-3">
+                        @foreach($ticket->photos as $photo)
+                            <a href="{{ $photo->url }}" target="_blank" class="block w-28 h-28 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition">
+                                {{-- Gunakan transformasi untuk thumbnail 200x200, kualitas auto --}}
+                                <img src="{{ $photo->url . '?w=200&h=200&c=fill&f=auto' }}" 
+                                    alt="{{ $photo->keterangan }}" 
+                                    class="w-full h-full object-cover">
+                            </a>
+                        @endforeach
+                    </div>
+                @else
+                    <p class="text-gray-500 text-sm">Tidak ada foto dokumentasi.</p>
+                @endif
+            </div>
+
             {{-- Catatan Teknisi --}}
             <div class="bg-[#14161a] border border-gray-800 rounded-xl overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-800">

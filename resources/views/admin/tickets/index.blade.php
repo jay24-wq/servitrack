@@ -333,57 +333,211 @@
     serialInput.addEventListener('input', cekSerial);
     cekSerial();
 
-    // Handle Multiple Local Image Previews (FIFO / Prepend secara visual)
-    const fileInputContainer = document.getElementById('file-input-container');
-    const previewList = document.getElementById('preview-list');
+    (function () {
+        const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
+        const MAX_FILES      = 5;
+        const ALLOWED_TYPES  = ['image/jpeg', 'image/png', 'image/webp'];
 
-    fileInputContainer.addEventListener('change', function(e) {
-        if (e.target.classList.contains('main-file-input')) {
-            const input = e.target;
-            const file = input.files[0];
-            
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    // 1. Buat elemen preview card
-                    const card = document.createElement('div');
-                    card.className = 'relative shrink-0 w-28 h-28 rounded-xl overflow-hidden border border-gray-800 group';
-                    
-                    // 2. Isi konten card (gambar + tombol hapus)
-                    card.innerHTML = `
-                        <img src="${event.target.result}" class="w-full h-full object-cover">
-                        <button type="button" class="absolute top-1.5 right-1.5 bg-red-600/80 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 text-[10px] z-10 btn-remove-photo">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    `;
-                    
-                    // 3. Pindahkan input file aktif ke dalam card agar ikut ter-submit ke backend dengan name="foto[]"
-                    input.name = 'foto[]';
-                    input.className = 'hidden';
-                    card.appendChild(input);
-                    
-                    // 4. Masukkan card ke paling depan (Prepend / FIFO secara visual) di preview-list
-                    previewList.insertBefore(card, previewList.firstChild);
-                    
-                    // 5. Buat input file baru di tombol "Tambah Gambar" untuk upload berikutnya
-                    const newInput = document.createElement('input');
-                    newInput.type = 'file';
-                    newInput.accept = 'image/*';
-                    newInput.className = 'hidden main-file-input';
-                    fileInputContainer.appendChild(newInput);
-                };
-                reader.readAsDataURL(file);
+        let fileCount = 0; // untuk penomoran
+
+        const fileInputContainer = document.getElementById('file-input-container');
+        const previewList        = document.getElementById('preview-list');
+        const addPhotoBtn        = document.getElementById('add-photo-btn');
+        const errorContainer     = document.getElementById('photo-error-container') || createErrorContainer();
+        const errorMessage       = document.getElementById('photo-error-message') || document.createElement('span');
+
+        // Buat elemen error jika belum ada
+        function createErrorContainer() {
+            const container = document.createElement('div');
+            container.id = 'photo-error-container';
+            container.className = 'text-red-400 text-xs mt-2 hidden';
+            const msg = document.createElement('span');
+            msg.id = 'photo-error-message';
+            container.appendChild(msg);
+            addPhotoBtn.parentNode.insertBefore(container, addPhotoBtn.nextSibling);
+            return container;
+        }
+
+        // Counter (bisa ditambahkan di dekat tombol)
+        const counter = document.createElement('span');
+        counter.id = 'photo-counter';
+        counter.className = 'text-gray-500 text-[10px] ml-2';
+        addPhotoBtn.parentNode.appendChild(counter);
+
+        // Klik tombol tambah
+        addPhotoBtn.addEventListener('click', function (e) {
+            e.preventDefault(); // mencegah perilaku default label
+
+            // Cek jumlah file saat ini (dari input yang ada di preview)
+            const currentCount = document.querySelectorAll('#preview-list .shrink-0').length;
+            if (currentCount >= MAX_FILES) {
+                showError(`Maksimal ${MAX_FILES} foto.`);
+                return;
+            }
+
+            // Buat input sementara untuk memilih file
+            const tempInput = document.createElement('input');
+            tempInput.type = 'file';
+            tempInput.accept = 'image/jpeg,image/png,image/webp';
+            tempInput.multiple = true; // bisa pilih banyak sekaligus
+
+            tempInput.addEventListener('change', function () {
+                const files = Array.from(this.files);
+                const errors = [];
+
+                files.forEach(file => {
+                    // Cek jumlah setelah penambahan
+                    const current = document.querySelectorAll('#preview-list .shrink-0').length;
+                    if (current >= MAX_FILES) {
+                        errors.push(`Batas ${MAX_FILES} foto tercapai. "${file.name}" tidak ditambahkan.`);
+                        return;
+                    }
+
+                    if (!ALLOWED_TYPES.includes(file.type)) {
+                        errors.push(`"${file.name}" bukan format yang didukung (JPG, PNG, WebP).`);
+                        return;
+                    }
+
+                    if (file.size > MAX_SIZE_BYTES) {
+                        const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+                        errors.push(`"${file.name}" ${sizeMB}MB > 2MB.`);
+                        return;
+                    }
+
+                    // Semua validasi lolos → tambahkan ke preview
+                    addFileToPreview(file);
+                });
+
+                if (errors.length > 0) {
+                    showError(errors.join(' '));
+                } else {
+                    hideError();
+                }
+
+                updateCounter();
+            });
+
+            tempInput.click();
+        });
+
+        // Fungsi untuk menambahkan satu file ke preview (prepend)
+        function addFileToPreview(file) {
+            // Baca file untuk preview
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                // Buat card
+                const card = document.createElement('div');
+                card.className = 'relative shrink-0 w-28 h-28 rounded-xl overflow-hidden border border-gray-800 group';
+
+                // Buat input file tersembunyi untuk dikirim ke server
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'file';
+                hiddenInput.name = 'foto[]';
+                hiddenInput.className = 'hidden';
+                // Kita perlu menambahkan file ke input ini. Karena input file tidak bisa diassign langsung,
+                // kita gunakan DataTransfer untuk membuat FileList
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                hiddenInput.files = dataTransfer.files; // Ini diperbolehkan di browser modern
+
+                const fileSize = formatSize(file.size);
+                const index = document.querySelectorAll('#preview-list .shrink-0').length + 1;
+
+                card.innerHTML = `
+                    <img src="${event.target.result}" class="w-full h-full object-cover">
+                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                        <p class="text-[9px] text-gray-300 truncate">${file.name}</p>
+                        <p class="text-[9px] text-gray-400">${fileSize}</p>
+                    </div>
+                    <button type="button" class="absolute top-1.5 right-1.5 w-5 h-5 bg-red-600/80 hover:bg-red-600 rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 z-10" onclick="removePhoto(this)">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                    <div class="absolute top-1.5 left-1.5 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
+                        <span class="text-[9px] font-bold text-white">${index}</span>
+                    </div>
+                `;
+
+                // Masukkan hidden input ke dalam card (agar ikut terkirim)
+                card.appendChild(hiddenInput);
+
+                // Prepend ke preview-list (FIFO)
+                previewList.insertBefore(card, previewList.firstChild);
+
+                // Sembunyikan tombol tambah jika sudah penuh
+                const currentCount = document.querySelectorAll('#preview-list .shrink-0').length;
+                if (currentCount >= MAX_FILES) {
+                    addPhotoBtn.classList.add('hidden');
+                }
+
+                updateCounter();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Fungsi hapus foto (dipanggil dari tombol hapus)
+        window.removePhoto = function (btn) {
+            const card = btn.closest('.shrink-0');
+            if (card) {
+                card.remove();
+                // Perbaiki penomoran ulang
+                renumberPreviews();
+                updateCounter();
+                // Tampilkan tombol tambah jika jumlah < MAX_FILES
+                const currentCount = document.querySelectorAll('#preview-list .shrink-0').length;
+                if (currentCount < MAX_FILES) {
+                    addPhotoBtn.classList.remove('hidden');
+                }
+                hideError();
+            }
+        };
+
+        // Fungsi untuk memperbaiki urutan nomor
+        function renumberPreviews() {
+            const cards = document.querySelectorAll('#preview-list .shrink-0');
+            cards.forEach((card, idx) => {
+                const numberSpan = card.querySelector('.absolute.top-1.left-1 span');
+                if (numberSpan) {
+                    numberSpan.textContent = idx + 1;
+                }
+            });
+        }
+
+        // Update counter
+        function updateCounter() {
+            const count = document.querySelectorAll('#preview-list .shrink-0').length;
+            if (counter) {
+                counter.textContent = `${count} / ${MAX_FILES} foto`;
+                counter.classList.toggle('text-amber-400', count >= MAX_FILES);
+                counter.classList.toggle('text-gray-500', count < MAX_FILES);
             }
         }
-    });
 
-    // Menghapus foto dari list pratinjau
-    previewList.addEventListener('click', function(e) {
-        const removeBtn = e.target.closest('.btn-remove-photo');
-        if (removeBtn) {
-            const card = removeBtn.closest('div');
-            card.remove();
+        // Format ukuran file
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
         }
-    });
+
+        // Tampilkan error
+        function showError(msg) {
+            if (errorMessage) {
+                errorMessage.textContent = msg;
+                errorContainer.classList.remove('hidden');
+            }
+        }
+
+        function hideError() {
+            if (errorContainer) {
+                errorContainer.classList.add('hidden');
+                if (errorMessage) errorMessage.textContent = '';
+            }
+        }
+
+        // Inisialisasi counter
+        updateCounter();
+    })();
 </script>
 @endpush

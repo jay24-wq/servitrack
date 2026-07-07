@@ -47,4 +47,9 @@ class ServiceTicket extends Model
     {
         return $this->hasMany(SparepartUsage::class);
     }
+
+    public function photos()
+    {
+        return $this->hasMany(ServiceTicketPhoto::class, 'service_ticket_id');
+    }
 }

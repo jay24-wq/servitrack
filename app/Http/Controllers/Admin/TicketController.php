@@ -8,9 +8,11 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use App\Models\Sparepart;
 use App\Models\Payment;
+use App\Services\CloudinaryService;
+use App\Models\ServiceTicketPhoto;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use Illuminate\Support\Facades\Log;
 
 class TicketController extends Controller
 {
@@ -54,6 +56,8 @@ class TicketController extends Controller
             'device_condition' => 'nullable|string|max:255',
             'keluhan'          => 'nullable|string',
             'total_biaya'      => 'required|numeric|min:0',
+            'foto'             => ['nullable', 'array', 'max:5'],
+            'foto.*'           => ['image', 'mimes:jpeg,png,webp', 'max:2048'],
         ]);
 
         $availableTechnician = User::where('role', 'teknisi')
@@ -67,7 +71,7 @@ class TicketController extends Controller
 
         $kode = 'SRV-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
 
-        ServiceTicket::create([
+        $ticket = ServiceTicket::create([
             'kode_servis'      => $kode,
             'nama_pelanggan'   => $request->customer_name,
             'nomor_hp'         => $request->phone_number,
@@ -83,6 +87,32 @@ class TicketController extends Controller
             'total_biaya'      => $request->total_biaya,
         ]);
 
+        // ── Upload foto ke Cloudinary ──
+        if ($request->hasFile('foto')) {
+            $cloudinary = new CloudinaryService();
+
+            foreach ($request->file('foto') as $index => $file) {
+                if (!$file->isValid()) continue;
+
+                try {
+                    $url = $cloudinary->upload(
+                        $file->getRealPath(),
+                        "servitrack/dokumentasi/{$kode}"
+                    );
+
+                    ServiceTicketPhoto::create([
+                        'service_ticket_id' => $ticket->id,
+                        'url'               => $url,
+                        'keterangan'        => 'Device',
+                    ]);
+
+                } catch (\Exception $e) {
+                    \Log::error("Upload foto gagal (ticket {$ticket->id}, index {$index}): " . $e->getMessage());
+                    continue;
+                }
+            }
+        }
+
         if (Auth::user()->role === 'frontdesk') {
             return redirect()->route('admin.tickets.create')
                 ->with('success', 'Tiket ' . $kode . ' berhasil dibuat!');
@@ -94,7 +124,7 @@ class TicketController extends Controller
 
     public function show(ServiceTicket $ticket)
     {
-        $ticket->load(['user', 'tasks', 'sparepartUsages.sparepart']);
+        $ticket->load(['user', 'tasks', 'sparepartUsages.sparepart', 'photos']);
         return view('admin.tickets.show', compact('ticket'));
     }
 
