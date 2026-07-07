@@ -62,6 +62,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::put('/staff/{user}', [StaffController::class, 'update'])->name('staff.update');
             Route::patch('/staff/{user}/toggle', [StaffController::class, 'toggleActive'])->name('staff.toggle');
             Route::get('/reports', [AdminTicketController::class, 'reports'])->name('reports');
+            Route::get('/admin/reports/download-pdf', [AdminTicketController::class, 'downloadPdf'])->name('reports.downloadPdf');
         });
     });
 

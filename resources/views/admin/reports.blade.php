@@ -24,6 +24,44 @@
                 </svg>
             </div>
         </div>
+        {{-- Form Download PDF --}}
+        <form method="GET" action="{{ route('admin.reports.downloadPdf') }}"
+            class="bg-[#14161a] border border-gray-800 rounded-xl p-6"
+            target="_blank">
+
+            <div class="flex items-end gap-4 flex-wrap">
+                <div>
+                    <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500 block mb-2">
+                        Dari Tanggal
+                    </label>
+                    <input type="date" name="dari_tanggal"
+                        value="{{ request('dari_tanggal', now()->startOfMonth()->format('Y-m-d')) }}"
+                        class="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-sm text-white
+                            focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500 block mb-2">
+                        Sampai Tanggal
+                    </label>
+                    <input type="date" name="sampai_tanggal"
+                        value="{{ request('sampai_tanggal', now()->format('Y-m-d')) }}"
+                        class="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-sm text-white
+                            focus:outline-none focus:border-blue-500">
+                </div>
+
+                <button type="submit"
+                    class="flex items-center gap-2 bg-blue-600/10 hover:bg-blue-600 border border-blue-500/30
+                        hover:border-blue-500 text-blue-400 hover:text-white font-semibold px-5 py-2.5
+                        rounded-xl text-sm transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download PDF
+                </button>
+            </div>
+
+        </form>
     </div>
 
     {{-- ================================================================
@@ -186,13 +224,6 @@
         {{-- Header --}}
         <div class="px-6 py-5 border-b border-gray-800 flex items-center justify-between">
             <h3 class="text-white font-semibold">Performa Kecepatan Teknisi</h3>
-            <a href="{{ route('admin.reports') }}"
-               class="flex items-center gap-2 px-4 py-2 bg-gray-900 border border-gray-800 hover:border-blue-500/30 text-gray-400 hover:text-white text-xs font-semibold rounded-lg transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Unduh Laporan CSV
-            </a>
         </div>
 
         {{-- Table --}}

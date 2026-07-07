@@ -13,6 +13,7 @@ use App\Models\ServiceTicketPhoto;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class TicketController extends Controller
 {
@@ -304,5 +305,98 @@ class TicketController extends Controller
             'perangkatSelesai', 'totalTicket',
             'avgWaktu', 'chartData', 'teknisiPerforma'
         ));
+    }
+
+    public function downloadPdf(Request $request)
+    {
+        $request->validate([
+            'dari_tanggal'  => ['required', 'date'],
+            'sampai_tanggal'=> ['required', 'date', 'after_or_equal:dari_tanggal'],
+        ]);
+
+        $dari    = Carbon::parse($request->dari_tanggal)->startOfDay();
+        $sampai  = Carbon::parse($request->sampai_tanggal)->endOfDay();
+
+        // ── Data tiket selesai dalam rentang tanggal ──
+        $tickets = ServiceTicket::with([
+                'user',
+                'payment',
+                'sparepartUsages.sparepart',
+            ])
+            ->whereBetween('updated_at', [$dari, $sampai])
+            ->where('status', 'selesai')
+            ->orderBy('updated_at', 'asc')
+            ->get();
+
+        // ── Ringkasan sparepart yang digunakan ──
+        $sparepartSummary = \App\Models\SparepartUsage::with('sparepart')
+            ->whereHas('serviceTicket', function ($q) use ($dari, $sampai) {
+                $q->whereBetween('updated_at', [$dari, $sampai])
+                ->where('status', 'selesai');
+            })
+            ->get()
+            ->groupBy('sparepart_id')
+            ->map(function ($usages) {
+                return [
+                    'nama'            => $usages->first()->sparepart->nama,
+                    'total_digunakan' => $usages->sum('jumlah_digunakan'),
+                    'total_harga'     => $usages->sum('total_harga'),
+                ];
+            })
+            ->values();
+
+        // ── Performa teknisi ──
+        $teknisiSummary = $tickets
+            ->groupBy('user_id')
+            ->map(function ($ticketsByTeknisi) {
+                $teknisi       = $ticketsByTeknisi->first()->user;
+                $totalPendapatan = $ticketsByTeknisi->sum(function ($t) {
+                    return $t->payment ? ($t->payment->biaya_sparepart + $t->payment->biaya_jasa) : 0;
+                });
+
+                return [
+                    'nama'             => $teknisi?->name ?? 'Tidak Ditugaskan',
+                    'jumlah_tiket'     => $ticketsByTeknisi->count(),
+                    'total_pendapatan' => $totalPendapatan,
+                ];
+            })
+            ->values();
+
+        // ── Ringkasan keuangan ──
+        $totalPendapatan   = $tickets->sum(fn($t) => $t->payment?->biaya_sparepart + $t->payment?->biaya_jasa ?? 0);
+        $totalBiayaPart    = $tickets->sum(fn($t) => $t->payment?->biaya_sparepart ?? 0);
+        $totalBiayaJasa    = $tickets->sum(fn($t) => $t->payment?->biaya_jasa ?? 0);
+        $jumlahPelanggan   = $tickets->pluck('nama_pelanggan')->unique()->count();
+        $jumlahTiketSelesai = $tickets->count();
+
+        $data = [
+            'tickets'            => $tickets,
+            'sparepartSummary'   => $sparepartSummary,
+            'teknisiSummary'     => $teknisiSummary,
+            'totalPendapatan'    => $totalPendapatan,
+            'totalBiayaPart'     => $totalBiayaPart,
+            'totalBiayaJasa'     => $totalBiayaJasa,
+            'jumlahPelanggan'    => $jumlahPelanggan,
+            'jumlahTiketSelesai' => $jumlahTiketSelesai,
+            'dari'               => $dari,
+            'sampai'             => $sampai,
+            'generated_at'       => Carbon::now(),
+        ];
+
+        $pdf = Pdf::loadView('admin.reports-pdf', $data)
+            ->setPaper('a4', 'landscape')
+            ->setOptions([
+                'defaultFont' => 'sans-serif',
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled'      => false,
+            ]);
+
+        $filename = 'Laporan-ServiTrack-'
+            . $dari->format('d-m-Y')
+            . '-sd-'
+            . $sampai->format('d-m-Y')
+            . '.pdf';
+
+        return $pdf->download($filename);
     }
 }
