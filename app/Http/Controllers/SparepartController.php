@@ -59,7 +59,7 @@ class SparepartController extends Controller
         Sparepart::create($validatedData);
 
         // 3. Alihkan halaman kembali ke tabel inventaris dengan status sukses
-        return redirect()->route('spareparts.index')->with('success', 'Suku cadang baru berhasil ditambahkan!');
+        return redirect()->route('admin.sparepart.index')->with('success', 'Suku cadang baru berhasil ditambahkan!');
     }
 
     // 3. READ SPECIFIC: Mengambil satu data sparepart spesifik berdasarkan ID
@@ -89,7 +89,7 @@ class SparepartController extends Controller
         // Cek LOGIKA OTOMATIS: Jika input stok baru bernilai 0 atau kurang
         if ($request->sparepart_stock <= 0) {
             $part->delete(); // Hapus permanen dari database
-            return redirect()->route('spareparts.index')
+            return redirect()->route('admin.sparepart.index')
                 ->with('success', 'Produk otomatis dihapus karena stok telah habis (0)!');
         }
 
@@ -102,7 +102,7 @@ class SparepartController extends Controller
             'stok_minimum' => $request->stok_minimum,
         ]);
 
-        return redirect()->route('spareparts.index')
+        return redirect()->route('admin.sparepart.index')
             ->with('success', 'Data sparepart berhasil diperbarui!');
     }
 
@@ -111,7 +111,7 @@ class SparepartController extends Controller
         $part = Sparepart::findOrFail($id);
         $part->delete(); // Hapus permanen dari database
 
-        return redirect()->route('spareparts.index')
+        return redirect()->route('admin.sparepart.index')
             ->with('success', 'Suku cadang berhasil dihapus secara permanen!');
     }
 }
