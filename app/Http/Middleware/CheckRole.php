@@ -21,6 +21,14 @@ class CheckRole
             return redirect()->route('login')->with('error', 'Silakan login terlebih dahulu!');
         }
 
+        // 1b. 🔒 KEAMANAN: Jika user dinonaktifkan (is_active === false), logout secara paksa
+        if (!Auth::user()->is_active) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+            return redirect()->route('login')->with('error', 'Akun Anda dinonaktifkan. Silakan hubungi Administrator.');
+        }
+
         // 2. Jika user sudah login DAN rolenya masuk dalam daftar, loloskan!
         if (in_array(Auth::user()->role, $roles)) {
             return $next($request);

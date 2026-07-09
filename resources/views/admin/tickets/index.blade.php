@@ -444,7 +444,7 @@
                 const index = document.querySelectorAll('#preview-list .shrink-0').length + 1;
 
                 card.innerHTML = `
-                    <img src="${event.target.result}" class="w-full h-full object-cover">
+                    <img src="${event.target.result}" class="w-full h-full object-cover" onerror="alert('Berkas rusak atau bukan gambar asli! Berkas akan dihapus.'); this.closest('.relative').remove(); renumberPreviews(); updateCounter();">
                     <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
                         <p class="text-[9px] text-gray-300 truncate">${file.name}</p>
                         <p class="text-[9px] text-gray-400">${fileSize}</p>

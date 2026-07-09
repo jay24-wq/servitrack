@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\TrackingSearchRequest;
 use App\Models\ServiceTicket; // Hubungkan dengan model tiket nanti
 use Illuminate\Http\Request;
 
@@ -18,14 +19,8 @@ class TrackingController extends Controller
     /**
      * Proses pencarian nomor tiket servis ala resi J&T
      */
-    public function search(Request $request)
+    public function search(TrackingSearchRequest $request)
     {
-        $request->validate([
-            'kode_servis' => 'required|string',
-        ], [
-            'kode_servis.required' => 'Nomor tiket/resi tidak boleh kosong!'
-        ]);
-
         $kodeServis = $request->input('kode_servis');
 
         // Cari tiket di database SEKALIGUS muat relasi sub-task ('tasks') dan teknisi ('user')

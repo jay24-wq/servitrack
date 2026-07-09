@@ -100,9 +100,26 @@
                     </svg>
                 </div>
 
-                @if($stats['selesai_hari_ini'] > 0)
-                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded">
+                @if($stats['selesai_growth'] > 0)
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
                     +{{ $stats['selesai_growth'] }}% vs Kemarin
+                </span>
+                @elseif($stats['selesai_growth'] < 0)
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    {{ $stats['selesai_growth'] }}% vs Kemarin
+                </span>
+                @else
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-400 bg-gray-500/10 border border-gray-500/20 px-2 py-1 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M18 12H6" />
+                    </svg>
+                    0.0% vs Kemarin
                 </span>
                 @endif
             </div>

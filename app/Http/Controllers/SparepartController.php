@@ -21,7 +21,9 @@ class SparepartController extends Controller
 
         // Logika 1: Jika user mengetik sesuatu di kolom pencarian
         if (!empty($search)) {
-            $query->where('nama', 'LIKE', '%' . $search . '%');
+            // 🔒 KEAMANAN: Escape wildcard karakter LIKE untuk mencegah DoS/SQLi
+            $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $search);
+            $query->where('nama', 'LIKE', '%' . $escapedSearch . '%');
         }
 
         // Logika 2: Jika user memilih/memfilter berdasarkan merek tertentu

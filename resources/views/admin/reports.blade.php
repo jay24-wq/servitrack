@@ -77,12 +77,33 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                 </div>
-                <span class="text-[10px] font-bold text-emerald-400">+12.5% ↗</span>
+                @if($growthPendapatan > 0)
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    +{{ number_format($growthPendapatan, 1) }}%
+                </span>
+                @elseif($growthPendapatan < 0)
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    {{ number_format($growthPendapatan, 1) }}%
+                </span>
+                @else
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-400 bg-gray-500/10 border border-gray-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M18 12H6" />
+                    </svg>
+                    0.0%
+                </span>
+                @endif
             </div>
             <div>
                 <p class="text-[10px] font-bold uppercase tracking-widest text-gray-500">Total Pendapatan</p>
                 <p class="text-2xl font-bold text-white mt-1">
-                    Rp {{ number_format($totalPendapatan / 1000000, 1, '.', ',') }}M
+                    Rp {{ number_format($totalPendapatan, 0, ',', '.') }}
                 </p>
             </div>
         </div>
@@ -95,12 +116,33 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
                 </div>
-                <span class="text-[10px] font-bold text-emerald-400">+8.2% ↗</span>
+                @if($growthKeuntungan > 0)
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    +{{ number_format($growthKeuntungan, 1) }}%
+                </span>
+                @elseif($growthKeuntungan < 0)
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    {{ number_format($growthKeuntungan, 1) }}%
+                </span>
+                @else
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-400 bg-gray-500/10 border border-gray-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M18 12H6" />
+                    </svg>
+                    0.0%
+                </span>
+                @endif
             </div>
             <div>
                 <p class="text-[10px] font-bold uppercase tracking-widest text-gray-500">Keuntungan Bersih</p>
                 <p class="text-2xl font-bold text-white mt-1">
-                    Rp {{ number_format($keuntunganBersih / 1000000, 1, '.', ',') }}M
+                    Rp {{ number_format($keuntunganBersih, 0, ',', '.') }}
                 </p>
             </div>
         </div>
@@ -132,7 +174,30 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                 </div>
-                <span class="text-[10px] font-bold text-red-400">-4% ↘</span>
+                @if($growthWaktu < 0)
+                {{-- Waktu servis berkurang (lebih cepat) adalah hal positif -> hijau up --}}
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    {{ number_format(abs($growthWaktu), 1) }}%
+                </span>
+                @elseif($growthWaktu > 0)
+                {{-- Waktu servis bertambah (lebih lambat) adalah hal negatif -> merah down --}}
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    +{{ number_format($growthWaktu, 1) }}%
+                </span>
+                @else
+                <span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-400 bg-gray-500/10 border border-gray-500/20 px-1.5 py-0.5 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M18 12H6" />
+                    </svg>
+                    0.0%
+                </span>
+                @endif
             </div>
             <div>
                 <p class="text-[10px] font-bold uppercase tracking-widest text-gray-500">Rata-rata Waktu Servis</p>

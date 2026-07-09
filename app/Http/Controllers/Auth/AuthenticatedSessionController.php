@@ -28,13 +28,10 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        $user = Auth::user();
-        
-        if ($user->role === 'admin') {
-            return redirect()->route('admin.dashboard');
-        }
-        
-        return redirect()->route('teknisi.dashboard'); // akan dibuat nanti
+        // 🔒 PENGATURAN ROUTE TERPUSAT:
+        // Arahkan semua user setelah login ke route '/dashboard'
+        // agar dialihkan secara dinamis sesuai role masing-masing (di web.php)
+        return redirect()->intended(route('dashboard', absolute: false));
     }
 
     /**

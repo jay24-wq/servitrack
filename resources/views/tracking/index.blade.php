@@ -52,20 +52,44 @@
             </div>
             @endif
 
-            <form action="{{ route('tracking.search') }}" method="GET" class="flex items-center bg-[#141722] border border-gray-800 rounded-lg p-2 focus-within:border-gray-600 transition shadow-xl">
-                <div class="flex items-center pl-3 text-gray-500">
-                    <i class="fa-solid fa-magnifying-glass"></i>
+            <form id="tracking-form" action="{{ route('tracking.search') }}" method="GET" class="space-y-2">
+                <div class="flex items-center bg-[#141722] border border-gray-800 rounded-lg p-2 focus-within:border-gray-600 transition shadow-xl" id="search-wrapper">
+                    <div class="flex items-center pl-3 text-gray-500">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                    <input
+                        type="text"
+                        id="kode_servis_input"
+                        name="kode_servis"
+                        placeholder="Repair Ticket ID — contoh: SRV-20240610-A1B2"
+                        value="{{ old('kode_servis') }}"
+                        class="w-full bg-transparent border-none text-white placeholder-gray-600 px-3 py-2 focus:ring-0 focus:outline-none text-sm md:text-base"
+                        autocomplete="off"
+                        required>
+                    <button type="submit" id="track-btn" class="bg-[#121829] hover:bg-[#1a233d] border border-gray-800 text-white font-semibold px-6 py-2.5 rounded-md text-xs tracking-widest uppercase transition-all">
+                        Lacak
+                    </button>
                 </div>
-                <input
-                    type="text"
-                    name="kode_servis"
-                    placeholder="Repair Ticket ID"
-                    value="{{ old('kode_servis') }}"
-                    class="w-full bg-transparent border-none text-white placeholder-gray-600 px-3 py-2 focus:ring-0 focus:outline-none text-sm md:text-base"
-                    required>
-                <button type="submit" class="bg-[#121829] hover:bg-[#1a233d] border border-gray-800 text-white font-semibold px-6 py-2.5 rounded-md text-xs tracking-widest uppercase transition-all">
-                    Lacak
-                </button>
+
+                {{-- 🔒 Peringatan Keamanan Real-Time (dari JavaScript) --}}
+                <div id="security-warning" class="hidden flex items-start gap-2 bg-red-900/40 border border-red-500/70 text-red-300 rounded-lg px-4 py-3 text-sm">
+                    <i class="fa-solid fa-shield-exclamation mt-0.5 text-red-400 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-semibold text-red-200">Karakter Berbahaya Terdeteksi!</p>
+                        <p class="text-xs text-red-400/90 mt-0.5">Input mengandung karakter tidak diizinkan. Nomor resi hanya boleh berisi huruf, angka, dan tanda hubung (<code class="bg-red-900/50 px-1 rounded">A–Z, 0–9, -</code>).</p>
+                    </div>
+                </div>
+
+                {{-- 🔒 Error dari Backend (Server-Side Validation) --}}
+                @error('kode_servis')
+                <div class="flex items-start gap-2 bg-red-900/40 border border-red-500/70 text-red-300 rounded-lg px-4 py-3 text-sm">
+                    <i class="fa-solid fa-circle-xmark mt-0.5 text-red-400 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-semibold text-red-200">Input Ditolak oleh Server</p>
+                        <p class="text-xs text-red-400/90 mt-0.5">{{ $message }}</p>
+                    </div>
+                </div>
+                @enderror
             </form>
 
             <div class="flex flex-wrap justify-center items-center gap-6 pt-4 text-xs">
@@ -185,6 +209,66 @@
             toggleLoginModal();
         });
     }
+
+    // 🔒 KEAMANAN: Validasi real-time input nomor resi
+    (function () {
+        const input    = document.getElementById('kode_servis_input');
+        const warning  = document.getElementById('security-warning');
+        const wrapper  = document.getElementById('search-wrapper');
+        const trackBtn = document.getElementById('track-btn');
+        const form     = document.getElementById('tracking-form');
+
+        // Whitelist: hanya huruf, angka, dan tanda hubung
+        const SAFE_PATTERN = /^[A-Za-z0-9\-]*$/;
+
+        function isDangerous(val) {
+            return val !== '' && !SAFE_PATTERN.test(val);
+        }
+
+        function showWarning() {
+            warning.classList.remove('hidden');
+            wrapper.classList.add('!border-red-500');
+            wrapper.classList.remove('border-gray-800');
+            trackBtn.disabled = true;
+            trackBtn.classList.add('opacity-40', 'cursor-not-allowed');
+        }
+
+        function hideWarning() {
+            warning.classList.add('hidden');
+            wrapper.classList.remove('!border-red-500');
+            wrapper.classList.add('border-gray-800');
+            trackBtn.disabled = false;
+            trackBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+        }
+
+        function validateInput() {
+            if (isDangerous(input.value)) {
+                showWarning();
+            } else {
+                hideWarning();
+            }
+        }
+
+        // Cek saat mengetik
+        input.addEventListener('input', validateInput);
+
+        // Cek saat paste (mencegah bypass dengan paste)
+        input.addEventListener('paste', function () {
+            setTimeout(validateInput, 10);
+        });
+
+        // Last-resort: blokir submit jika ada karakter berbahaya
+        form.addEventListener('submit', function (e) {
+            if (isDangerous(input.value)) {
+                e.preventDefault();
+                showWarning();
+                input.focus();
+            }
+        });
+
+        // Jalankan saat load (jika ada old() value dari Laravel)
+        validateInput();
+    })();
 </script>
 
 </body>

@@ -77,8 +77,17 @@
                     <span class="text-white font-semibold text-xs uppercase tracking-wider">Foto Dokumentasi</span>
                 </div>
 
-                @if($ticket->photos->count())
+                @if($ticket->photos->count() || $ticket->device_photo)
                     <div class="flex flex-wrap gap-3">
+                        @if($ticket->device_photo)
+                            <a href="{{ route('tickets.photo', $ticket) }}" target="_blank" class="block w-28 h-28 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition">
+                                {{-- Menampilkan foto perangkat aman dari private storage --}}
+                                <img src="{{ route('tickets.photo', $ticket) }}" 
+                                    alt="Foto Kondisi Perangkat (Private)" 
+                                    class="w-full h-full object-cover">
+                            </a>
+                        @endif
+
                         @foreach($ticket->photos as $photo)
                             <a href="{{ $photo->url }}" target="_blank" class="block w-28 h-28 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition">
                                 {{-- Gunakan transformasi untuk thumbnail 200x200, kualitas auto --}}

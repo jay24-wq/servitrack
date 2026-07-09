@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\PaymentController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Teknisi\TicketController as TeknisiTicketController;
 use App\Http\Controllers\Teknisi\StokKomponenController;
+use App\Http\Controllers\DevicePhotoController;
 
 // Halaman utama tempat input nomor resi/tiket
 Route::get('/', [TrackingController::class, 'index'])->name('tracking.index');
@@ -37,6 +38,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
+    // Secure Serving: Menampilkan foto perangkat secara aman dari private storage
+    Route::get('/tickets/{ticket}/photo', [DevicePhotoController::class, 'show'])->name('tickets.photo');
+
     // 🔴 GRUP AKSES BERSAMA (ADMIN & FRONTDESK)
     Route::middleware(['role:admin,frontdesk'])->group(function () {
         Route::prefix('admin')->name('admin.')->group(function () {
@@ -62,7 +66,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::put('/staff/{user}', [StaffController::class, 'update'])->name('staff.update');
             Route::patch('/staff/{user}/toggle', [StaffController::class, 'toggleActive'])->name('staff.toggle');
             Route::get('/reports', [AdminTicketController::class, 'reports'])->name('reports');
-            Route::get('/admin/reports/download-pdf', [AdminTicketController::class, 'downloadPdf'])->name('reports.downloadPdf');
+            Route::get('reports/download-pdf', [AdminTicketController::class, 'downloadPdf'])->name('reports.downloadPdf');
         });
     });
 

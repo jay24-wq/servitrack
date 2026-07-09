@@ -62,10 +62,8 @@ class TicketController extends Controller
      */
     public function updateStatus(Request $request, ServiceTicket $service_ticket)
     {
-        // Validasi kepemilikan tiket sesuai logika lamamu
-        if ($service_ticket->user_id !== auth()->id()) {
-            abort(403);
-        }
+        // 🔒 KEAMANAN: Cek otorisasi menggunakan ServiceTicketPolicy
+        $this->authorize('updateStatus', $service_ticket);
 
         $request->validate([
             'status' => 'required|in:antrian,pengecekan,menunggu part,pengerjaan,quality control,siap diambil,selesai',
@@ -84,9 +82,8 @@ class TicketController extends Controller
      */
     public function updateDetail(Request $request, ServiceTicket $service_ticket)
     {
-        if ($service_ticket->user_id !== auth()->id()) {
-            abort(403);
-        }
+        // 🔒 KEAMANAN: Cek otorisasi menggunakan ServiceTicketPolicy
+        $this->authorize('updateStatus', $service_ticket);
 
         if ($service_ticket->sub_status === 'waiting_approval') {
             return back()->with('error', 'Tiket sedang menunggu persetujuan pelanggan via WA.');

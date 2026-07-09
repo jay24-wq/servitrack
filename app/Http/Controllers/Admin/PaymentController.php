@@ -25,6 +25,12 @@ class PaymentController extends Controller
         $error  = null;
 
         if ($kode) {
+            // 🔒 KEAMANAN: Validasi parameter dengan whitelist regex (Alphanumeric + Hyphen)
+            if (!preg_match('/^[A-Za-z0-9\-]+$/', $kode)) {
+                $error = 'Format kode servis tidak valid (hanya boleh huruf, angka, dan tanda hubung).';
+                return view('admin.payment', compact('ticket', 'error'));
+            }
+
             $ticket = ServiceTicket::with([
                 'user',
                 'payment',
@@ -32,7 +38,8 @@ class PaymentController extends Controller
             ])->where('kode_servis', $kode)->first();
 
             if (!$ticket) {
-                $error = "Tiket dengan kode \"{$kode}\" tidak ditemukan.";
+                // 🔒 KEAMANAN: Escaping untuk mencegah Reflected XSS
+                $error = 'Tiket dengan kode "' . htmlspecialchars($kode, ENT_QUOTES, 'UTF-8') . '" tidak ditemukan.';
             } elseif (!in_array($ticket->status, ['siap diambil', 'selesai'])) {
                 $error = "Tiket ini belum selesai dikerjakan (status: {$ticket->status}). Pembayaran hanya bisa diproses untuk tiket berstatus Siap Diambil.";
                 $ticket = null;

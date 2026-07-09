@@ -22,6 +22,7 @@ class ServiceTicket extends Model
         'user_id',
         'total_biaya',
         'catatan_teknisi',
+        'device_photo',
     ];
 
     protected $casts = [

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ServiceTicket;
 use App\Models\User;
 use Illuminate\Http\Request;
+use App\Http\Requests\StoreTicketRequest;
 use App\Models\Sparepart;
 use App\Models\Payment;
 use App\Services\CloudinaryService;
@@ -13,6 +14,9 @@ use App\Models\ServiceTicketPhoto;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class TicketController extends Controller
@@ -44,22 +48,9 @@ class TicketController extends Controller
         return view('admin.tickets.index', compact('teknisi', 'no_resi', 'spareparts'));
     }
 
-    public function store(Request $request)
+    public function store(StoreTicketRequest $request)
     {
-        $request->validate([
-            'customer_name'    => 'required|string|max:100',
-            'phone_number'     => 'required|string|max:15',
-            'email'            => 'nullable|email|max:100',
-            'checkin_date'     => 'required|date',
-            'device_name'      => 'required|string|max:100',
-            'device_brand'     => 'nullable|string|max:50',
-            'device_serial'    => 'required|string|max:50',
-            'device_condition' => 'nullable|string|max:255',
-            'keluhan'          => 'nullable|string',
-            'total_biaya'      => 'required|numeric|min:0',
-            'foto'             => ['nullable', 'array', 'max:5'],
-            'foto.*'           => ['image', 'mimes:jpeg,png,webp', 'max:2048'],
-        ]);
+        // Validasi sudah ditangani oleh StoreTicketRequest (whitelist validation)
 
         $availableTechnician = User::where('role', 'teknisi')
             ->withCount(['tickets' => function ($query) {
@@ -70,7 +61,30 @@ class TicketController extends Controller
 
         $assignedUserId = $availableTechnician ? $availableTechnician->id : null;
 
-        $kode = 'SRV-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
+        // 🔒 KEAMANAN: Kode resi yang lebih kuat dengan Str::random(8)
+        $kode = 'SRV-' . date('Ymd') . '-' . strtoupper(Str::random(8));
+
+        // 🔒 KEAMANAN: Secure File Upload ke private storage (satu foto utama)
+        $photoPath = null;
+        if ($request->hasFile('foto')) {
+            $files = $request->file('foto');
+            $file = is_array($files) ? $files[0] : $files;
+
+            if ($file && $file->isValid()) {
+                // Double-check MIME type menggunakan finfo (binary check)
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $realMimeType = $finfo->file($file->getRealPath());
+
+                $allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+                if (in_array($realMimeType, $allowedMimes)) {
+                    // Nama file acak (UUID)
+                    $safeFilename = Str::uuid() . '_' . time() . '.' . $file->getClientOriginalExtension();
+
+                    // Simpan di disk 'local' (storage/app/private/device-photos/)
+                    $photoPath = $file->storeAs('device-photos', $safeFilename, 'local');
+                }
+            }
+        }
 
         $ticket = ServiceTicket::create([
             'kode_servis'      => $kode,
@@ -86,6 +100,7 @@ class TicketController extends Controller
             'user_id'          => $assignedUserId,
             'status'           => 'antrian',
             'total_biaya'      => $request->total_biaya,
+            'device_photo'     => $photoPath,
         ]);
 
         // ── Upload foto ke Cloudinary ──
@@ -125,12 +140,18 @@ class TicketController extends Controller
 
     public function show(ServiceTicket $ticket)
     {
+        // 🔒 KEAMANAN: Cek otorisasi berdasarkan ServiceTicketPolicy
+        Gate::authorize('view', $ticket);
+
         $ticket->load(['user', 'tasks', 'sparepartUsages.sparepart', 'photos']);
         return view('admin.tickets.show', compact('ticket'));
     }
 
     public function updateStatus(Request $request, ServiceTicket $ticket)
     {
+        // 🔒 KEAMANAN: Cek otorisasi berdasarkan ServiceTicketPolicy
+        Gate::authorize('updateStatus', $ticket);
+
         $request->validate([
             'status' => 'required|in:antrian,pengecekan,menunggu part,pengerjaan,quality control,siap diambil,selesai',
         ]);
@@ -142,6 +163,17 @@ class TicketController extends Controller
 
     public function overview()
     {
+        $selesaiHariIni = ServiceTicket::where('status', 'selesai')
+                                    ->whereDate('updated_at', today())->count();
+        $selesaiKemarin = ServiceTicket::where('status', 'selesai')
+                                    ->whereDate('updated_at', today()->subDay())->count();
+        $selesaiGrowth = 0;
+        if ($selesaiKemarin > 0) {
+            $selesaiGrowth = round((($selesaiHariIni - $selesaiKemarin) / $selesaiKemarin) * 100, 1);
+        } elseif ($selesaiHariIni > 0) {
+            $selesaiGrowth = 100.0;
+        }
+
         // Stats cards
         $stats = [
             'total'            => ServiceTicket::count(),
@@ -151,9 +183,8 @@ class TicketController extends Controller
                                 ->where('sub_status', 'waiting_approval')->count(),
             'menunggu_indent'  => ServiceTicket::where('status', 'menunggu part')                   
                                 ->where('sub_status', 'waiting_indent')->count(),
-            'selesai_hari_ini' => ServiceTicket::where('status', 'selesai')
-                                    ->whereDate('updated_at', today())->count(),
-            'selesai_growth'   => 12, // nanti bisa dihitung dinamis
+            'selesai_hari_ini' => $selesaiHariIni,
+            'selesai_growth'   => $selesaiGrowth,
             'pendapatan_hari_ini' => Payment::whereDate('tanggal_bayar', today())
                                 ->where('status', 'lunas')
                                 ->sum('total'),
@@ -191,7 +222,6 @@ class TicketController extends Controller
         return view('admin.dashboard', compact(
             'stats', 'chartData', 'recentTickets', 'stokKritis', 'teknisiAktif', 'teknisiOnDuty'
         ));
-        
     }
 
     public function queue(Request $request)
@@ -248,6 +278,44 @@ class TicketController extends Controller
         $totalBiayaPart  = \App\Models\Payment::where('status', 'lunas')->sum('biaya_sparepart');
         $keuntunganBersih = $totalPendapatan - $totalBiayaPart;
 
+        // Hitung Pendapatan Bulan Ini & Bulan Lalu untuk Tren Pertumbuhan
+        $pendapatanBulanIni = \App\Models\Payment::where('status', 'lunas')
+            ->whereMonth('tanggal_bayar', now()->month)
+            ->whereYear('tanggal_bayar', now()->year)
+            ->sum('total');
+            
+        $pendapatanBulanLalu = \App\Models\Payment::where('status', 'lunas')
+            ->whereMonth('tanggal_bayar', now()->subMonth()->month)
+            ->whereYear('tanggal_bayar', now()->subMonth()->year)
+            ->sum('total');
+
+        $growthPendapatan = 0;
+        if ($pendapatanBulanLalu > 0) {
+            $growthPendapatan = round((($pendapatanBulanIni - $pendapatanBulanLalu) / $pendapatanBulanLalu) * 100, 1);
+        } elseif ($pendapatanBulanIni > 0) {
+            $growthPendapatan = 100.0;
+        }
+
+        // Hitung Keuntungan Bulan Ini & Bulan Lalu untuk Tren Keuntungan Bersih
+        $biayaPartBulanIni = \App\Models\Payment::where('status', 'lunas')
+            ->whereMonth('tanggal_bayar', now()->month)
+            ->whereYear('tanggal_bayar', now()->year)
+            ->sum('biaya_sparepart');
+        $keuntunganBulanIni = $pendapatanBulanIni - $biayaPartBulanIni;
+
+        $biayaPartBulanLalu = \App\Models\Payment::where('status', 'lunas')
+            ->whereMonth('tanggal_bayar', now()->subMonth()->month)
+            ->whereYear('tanggal_bayar', now()->subMonth()->year)
+            ->sum('biaya_sparepart');
+        $keuntunganBulanLalu = $pendapatanBulanLalu - $biayaPartBulanLalu;
+
+        $growthKeuntungan = 0;
+        if ($keuntunganBulanLalu > 0) {
+            $growthKeuntungan = round((($keuntunganBulanIni - $keuntunganBulanLalu) / $keuntunganBulanLalu) * 100, 1);
+        } elseif ($keuntunganBulanIni > 0) {
+            $growthKeuntungan = 100.0;
+        }
+
         $perangkatSelesai = ServiceTicket::where('status', 'selesai')->count();
         $totalTicket      = ServiceTicket::count();
 
@@ -255,6 +323,24 @@ class TicketController extends Controller
         $avgWaktu = ServiceTicket::where('status', 'selesai')
             ->selectRaw('AVG(DATEDIFF(updated_at, created_at)) as avg_hari')
             ->value('avg_hari');
+
+        // Hitung Rata-rata Waktu Servis Bulan Ini & Bulan Lalu untuk Tren
+        $avgWaktuBulanIni = ServiceTicket::where('status', 'selesai')
+            ->whereMonth('updated_at', now()->month)
+            ->whereYear('updated_at', now()->year)
+            ->selectRaw('AVG(DATEDIFF(updated_at, created_at)) as avg_hari')
+            ->value('avg_hari') ?? 0;
+
+        $avgWaktuBulanLalu = ServiceTicket::where('status', 'selesai')
+            ->whereMonth('updated_at', now()->subMonth()->month)
+            ->whereYear('updated_at', now()->subMonth()->year)
+            ->selectRaw('AVG(DATEDIFF(updated_at, created_at)) as avg_hari')
+            ->value('avg_hari') ?? 0;
+
+        $growthWaktu = 0;
+        if ($avgWaktuBulanLalu > 0) {
+            $growthWaktu = round((($avgWaktuBulanIni - $avgWaktuBulanLalu) / $avgWaktuBulanLalu) * 100, 1);
+        }
 
         // Chart 6 bulan terakhir
         $chartData = [];
@@ -302,6 +388,7 @@ class TicketController extends Controller
 
         return view('admin.reports', compact(
             'totalPendapatan', 'keuntunganBersih',
+            'growthPendapatan', 'growthKeuntungan', 'growthWaktu',
             'perangkatSelesai', 'totalTicket',
             'avgWaktu', 'chartData', 'teknisiPerforma'
         ));

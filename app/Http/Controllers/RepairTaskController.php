@@ -41,6 +41,10 @@ class RepairTaskController extends Controller
 
         // Cari sub-task di database dan perbarui status warnanya
         $task = RepairTask::findOrFail($id);
+
+        // 🔒 KEAMANAN: Cek otorisasi berdasarkan RepairTaskPolicy
+        $this->authorize('update', $task);
+
         $task->update([
             'status_tugas' => $request->status_tugas
         ]);
