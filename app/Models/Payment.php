@@ -30,7 +30,7 @@ class Payment extends Model
     {
         static::updating(function ($payment) {
             if ($payment->isDirty('status') && $payment->status === 'lunas') {
-            $payment->tanggal_bayar = now();
+                $payment->tanggal_bayar = now();
             }
         });
     }

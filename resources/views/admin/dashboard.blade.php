@@ -146,12 +146,12 @@
             <div class="flex items-center justify-between border-b border-gray-800 pb-4">
                 <div>
                     <h3 class="text-white font-semibold text-sm">Tren Perbaikan</h3>
-                    <p class="text-gray-500 text-xs mt-0.5">Volume perbaikan 7 hari terakhir</p>
+                    <p class="text-gray-500 text-xs mt-0.5">Volume perbaikan {{ $days }} hari terakhir</p>
                 </div>
                 <div class="relative">
-                    <select class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 appearance-none pr-7 cursor-pointer">
-                        <option>7 Hari Terakhir</option>
-                        <option>30 Hari Terakhir</option>
+                    <select onchange="window.location.search = '?days=' + this.value" class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 appearance-none pr-7 cursor-pointer">
+                        <option value="7" {{ $days == 7 ? 'selected' : '' }}>7 Hari Terakhir</option>
+                        <option value="30" {{ $days == 30 ? 'selected' : '' }}>30 Hari Terakhir</option>
                     </select>
                     <div class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-500">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -162,16 +162,40 @@
             </div>
 
             {{-- Bar Chart --}}
-            <div class="flex items-end justify-between gap-2 h-40 pt-4">
-                @foreach($chartData as $day)
-                <div class="flex flex-col items-center gap-2 flex-1">
-                    <div class="w-full rounded-md transition-all duration-300 {{ $day['is_today'] ? 'bg-blue-500/60' : 'bg-gray-700/60' }} hover:opacity-80"
-                        style="height: {{ $day['height'] }}%"
-                        title="{{ $day['count'] }} tiket"></div>
-                    <span class="text-[10px] text-gray-500">{{ $day['label'] }}</span>
+            @php $hasTicketData = collect($chartData)->sum('count') > 0; @endphp
+            @if($hasTicketData)
+            <div class="space-y-2 pt-4">
+                {{-- Bars Container --}}
+                <div class="flex items-end justify-between gap-1 h-32">
+                    @foreach($chartData as $day)
+                    <div class="flex-1 flex flex-col justify-end h-full">
+                        <div class="w-full rounded-md transition-all duration-300 {{ $day['is_today'] ? 'bg-blue-500/70 hover:bg-blue-500' : ($day['count'] > 0 ? 'bg-gray-600/60 hover:bg-gray-500/60' : 'bg-gray-800/30') }} hover:opacity-80"
+                            style="height: {{ $day['height'] }}%"
+                            title="{{ $day['count'] }} tiket{{ $day['is_today'] ? ' (hari ini)' : '' }}"></div>
+                    </div>
+                    @endforeach
                 </div>
-                @endforeach
+                {{-- Labels Container --}}
+                <div class="flex justify-between gap-1 border-t border-gray-800/50 pt-2">
+                    @foreach($chartData as $index => $day)
+                    @php
+                        // Tampilkan label setiap 5 hari jika rentang 30 hari untuk menghindari tumpang tindih
+                        $showLabel = ($days === 7) || ($index % 5 === 0) || ($day['is_today']);
+                    @endphp
+                    <span class="flex-1 text-center text-[9px] {{ $day['is_today'] ? 'text-blue-400 font-semibold' : 'text-gray-500' }}">
+                        {{ $showLabel ? $day['label'] : '' }}
+                    </span>
+                    @endforeach
+                </div>
             </div>
+            @else
+            <div class="h-40 flex flex-col items-center justify-center gap-2 text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <p class="text-xs">Belum ada tiket dalam 7 hari terakhir</p>
+            </div>
+            @endif
         </div>
 
         {{-- Tiket Terbaru --}}

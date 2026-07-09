@@ -223,25 +223,51 @@
                 </div>
                 <div class="flex items-center gap-2 text-xs text-gray-500">
                     <span class="w-2 h-2 rounded-full bg-indigo-400/50 inline-block"></span>
-                    Target tercapai
+                    Pendapatan bulan berjalan
                 </div>
             </div>
 
             {{-- Bar Chart --}}
-            <div class="flex items-end justify-between gap-3 h-44 pt-4">
-                @foreach($chartData as $d)
-                <div class="flex flex-col items-center gap-2 flex-1">
-                    <span class="text-[9px] text-gray-600">
-                        {{ $d['value'] > 0 ? 'Rp ' . number_format($d['value'] / 1000000, 1) . 'M' : '' }}
+            @php $hasRevenueData = collect($chartData)->sum('value') > 0; @endphp
+            @if($hasRevenueData)
+            <div class="space-y-2 pt-4">
+                {{-- Value labels --}}
+                <div class="flex justify-between gap-3 text-center">
+                    @foreach($chartData as $d)
+                    <span class="flex-1 text-[9px] {{ $d['value'] > 0 ? 'text-gray-400' : 'text-transparent' }}">
+                        {{ $d['value'] > 0 ? 'Rp ' . number_format($d['value'] / 1000, 0) . 'rb' : '-' }}
                     </span>
-                    <div class="w-full rounded-md bg-gray-700/50 hover:bg-indigo-500/40 transition cursor-default"
-                         style="height: {{ $d['height'] }}%"
-                         title="Rp {{ number_format($d['value'], 0, ',', '.') }}">
-                    </div>
-                    <span class="text-[10px] text-gray-500">{{ $d['label'] }}</span>
+                    @endforeach
                 </div>
-                @endforeach
+                {{-- Bars Container --}}
+                <div class="flex items-end justify-between gap-3 h-32">
+                    @foreach($chartData as $d)
+                    @php $isLatest = $loop->last; @endphp
+                    <div class="flex-1 flex flex-col justify-end h-full">
+                        <div class="w-full rounded-md transition cursor-default {{ $isLatest ? 'bg-indigo-500/60 hover:bg-indigo-500/80' : ($d['value'] > 0 ? 'bg-indigo-800/50 hover:bg-indigo-700/60' : 'bg-gray-800/40') }}"
+                             style="height: {{ $d['height'] }}%"
+                             title="{{ $d['label'] }}: Rp {{ number_format($d['value'], 0, ',', '.') }}">
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+                {{-- Month Labels Container --}}
+                <div class="flex justify-between gap-3 border-t border-gray-800/50 pt-2">
+                    @foreach($chartData as $d)
+                    @php $isLatest = $loop->last; @endphp
+                    <span class="flex-1 text-center text-[10px] {{ $isLatest ? 'text-indigo-400 font-semibold' : 'text-gray-500' }}">{{ $d['label'] }}</span>
+                    @endforeach
+                </div>
             </div>
+            @else
+            <div class="h-44 flex flex-col items-center justify-center gap-2 text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <p class="text-sm">Belum ada data pendapatan</p>
+                <p class="text-xs opacity-60">Data akan muncul setelah ada transaksi selesai</p>
+            </div>
+            @endif
         </div>
 
         {{-- Kategori Kerusakan --}}

@@ -161,8 +161,13 @@ class TicketController extends Controller
         return back()->with('success', 'Status tiket diperbarui!');
     }
 
-    public function overview()
+    public function overview(Request $request)
     {
+        $days = (int) $request->query('days', 7);
+        if (!in_array($days, [7, 30])) {
+            $days = 7;
+        }
+
         $selesaiHariIni = ServiceTicket::where('status', 'selesai')
                                     ->whereDate('updated_at', today())->count();
         $selesaiKemarin = ServiceTicket::where('status', 'selesai')
@@ -191,14 +196,18 @@ class TicketController extends Controller
             'target_pendapatan'   => 500000,
         ];
 
-        // Chart data 7 hari terakhir
+        // Chart data $days hari terakhir
         $maxCount = 1;
         $rawChart = [];
-        for ($i = 6; $i >= 0; $i--) {
+        for ($i = $days - 1; $i >= 0; $i--) {
             $date  = Carbon::now()->subDays($i);
             $count = ServiceTicket::whereDate('created_at', $date)->count();
+            
+            // Format label: tanggal pendek jika 30 hari (misal 25 Jun), atau nama hari jika 7 hari (misal Sen)
+            $label = $days === 30 ? $date->translatedFormat('j M') : $date->translatedFormat('D');
+
             $rawChart[] = [
-                'label'    => $date->translatedFormat('D'),
+                'label'    => $label,
                 'count'    => $count,
                 'is_today' => $i === 0,
             ];
@@ -220,7 +229,7 @@ class TicketController extends Controller
         $teknisiOnDuty = $teknisiAktif->count() > 0 ? min(2, $teknisiAktif->count()) : 0;
 
         return view('admin.dashboard', compact(
-            'stats', 'chartData', 'recentTickets', 'stokKritis', 'teknisiAktif', 'teknisiOnDuty'
+            'stats', 'chartData', 'recentTickets', 'stokKritis', 'teknisiAktif', 'teknisiOnDuty', 'days'
         ));
     }
 
