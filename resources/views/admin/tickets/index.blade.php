@@ -425,53 +425,66 @@
             // Baca file untuk preview
             const reader = new FileReader();
             reader.onload = function (event) {
-                // Buat card
-                const card = document.createElement('div');
-                card.className = 'relative shrink-0 w-28 h-28 rounded-xl overflow-hidden border border-gray-800 group';
+                // 🔒 FRONTEND VALIDATION 3: Cek validitas data gambar dengan loading ke Image object
+                // Ini mencegah race condition di mana card di-append dulu lalu di-remove oleh onerror
+                const tempImg = new Image();
+                tempImg.onload = function () {
+                    // Gambar asli dan valid -> buat card
+                    const card = document.createElement('div');
+                    card.className = 'relative shrink-0 w-28 h-28 rounded-xl overflow-hidden border border-gray-800 group';
 
-                // Buat input file tersembunyi untuk dikirim ke server
-                const hiddenInput = document.createElement('input');
-                hiddenInput.type = 'file';
-                hiddenInput.name = 'foto[]';
-                hiddenInput.className = 'hidden';
-                // Kita perlu menambahkan file ke input ini. Karena input file tidak bisa diassign langsung,
-                // kita gunakan DataTransfer untuk membuat FileList
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                hiddenInput.files = dataTransfer.files; // Ini diperbolehkan di browser modern
+                    // Buat input file tersembunyi untuk dikirim ke server
+                    const hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'file';
+                    hiddenInput.name = 'foto[]';
+                    hiddenInput.className = 'hidden';
+                    
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    hiddenInput.files = dataTransfer.files;
 
-                const fileSize = formatSize(file.size);
-                const index = document.querySelectorAll('#preview-list .shrink-0').length + 1;
+                    const fileSize = formatSize(file.size);
+                    const index = document.querySelectorAll('#preview-list .shrink-0').length + 1;
 
-                card.innerHTML = `
-                    <img src="${event.target.result}" class="w-full h-full object-cover" onerror="alert('Berkas rusak atau bukan gambar asli! Berkas akan dihapus.'); this.closest('.relative').remove(); renumberPreviews(); updateCounter();">
-                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
-                        <p class="text-[9px] text-gray-300 truncate">${file.name}</p>
-                        <p class="text-[9px] text-gray-400">${fileSize}</p>
-                    </div>
-                    <button type="button" class="absolute top-1.5 right-1.5 w-5 h-5 bg-red-600/80 hover:bg-red-600 rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 z-10" onclick="removePhoto(this)">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                    <div class="absolute top-1.5 left-1.5 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
-                        <span class="text-[9px] font-bold text-white">${index}</span>
-                    </div>
-                `;
+                    card.innerHTML = `
+                        <img src="${event.target.result}" class="w-full h-full object-cover">
+                        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                            <p class="text-[9px] text-gray-300 truncate">${file.name}</p>
+                            <p class="text-[9px] text-gray-400">${fileSize}</p>
+                        </div>
+                        <button type="button" class="absolute top-1.5 right-1.5 w-5 h-5 bg-red-600/80 hover:bg-red-600 rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 z-10" onclick="removePhoto(this)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                        <div class="absolute top-1.5 left-1.5 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
+                            <span class="text-[9px] font-bold text-white">${index}</span>
+                        </div>
+                    `;
 
-                // Masukkan hidden input ke dalam card (agar ikut terkirim)
-                card.appendChild(hiddenInput);
+                    // Masukkan hidden input ke dalam card (agar ikut terkirim)
+                    card.appendChild(hiddenInput);
 
-                // Prepend ke preview-list (FIFO)
-                previewList.insertBefore(card, previewList.firstChild);
+                    // Prepend ke preview-list (FIFO)
+                    previewList.insertBefore(card, previewList.firstChild);
 
-                // Sembunyikan tombol tambah jika sudah penuh
-                const currentCount = document.querySelectorAll('#preview-list .shrink-0').length;
-                if (currentCount >= MAX_FILES) {
-                    addPhotoBtn.classList.add('hidden');
-                }
+                    // Sembunyikan tombol tambah jika sudah penuh
+                    const currentCount = document.querySelectorAll('#preview-list .shrink-0').length;
+                    if (currentCount >= MAX_FILES) {
+                        addPhotoBtn.classList.add('hidden');
+                    }
 
-                updateCounter();
+                    updateCounter();
+                    hideError();
+                };
+
+                tempImg.onerror = function () {
+                    // Gambar rusak / manipulasi ekstensi (.drawio -> .png)
+                    showError(`Berkas "${file.name}" rusak atau bukan gambar asli!`);
+                    alert(`Berkas "${file.name}" rusak atau bukan gambar asli! Berkas tidak akan ditambahkan.`);
+                };
+
+                tempImg.src = event.target.result;
             };
             reader.readAsDataURL(file);
         }
