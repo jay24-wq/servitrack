@@ -135,7 +135,10 @@ class TicketController extends Controller
             'status' => 'required|in:antrian,pengecekan,menunggu part,pengerjaan,quality control,siap diambil,selesai',
         ]);
 
-        $ticket->update(['status' => $request->status]);
+        $ticket->update([
+            'status' => $request->status,
+            'sub_status' => null,
+        ]);
 
         return back()->with('success', 'Status tiket diperbarui!');
     }

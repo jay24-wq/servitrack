@@ -610,45 +610,29 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
                     <div class="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-xs text-blue-400">
                         Pelanggan menyetujui pengerjaan. Selesaikan perbaikan fisik perangkat, lalu pilih suku cadang yang digunakan.
                     </div>
+
+                    {{-- Sparepart Components --}}
                     <div>
                         <label class="text-[10px] uppercase font-bold tracking-wider text-blue-400">
                             Suku Cadang Gudang yang Digunakan
                         </label>
 
-                        {{-- Loading state --}}
-                        <div id="sparepartLoadingState"
-                            class="flex items-center gap-2 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2.5 text-xs text-gray-500 mt-1.5">
-                            <svg class="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        {{-- Container untuk baris-baris sparepart --}}
+                        <div id="sparepart-container" class="space-y-2 mt-1.5">
+                            {{-- Baris pertama akan ditambahkan oleh JavaScript --}}
+                        </div>
+
+                        {{-- Tombol tambah baris --}}
+                        <button type="button" onclick="tambahBarisSparepart()"
+                            class="mt-2 text-[10px] font-bold text-blue-400 hover:text-blue-300 transition flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
                             </svg>
-                            Memuat daftar komponen...
-                        </div>
-
-                        <div class="flex gap-2 mt-1.5">
-                            <select name="id_komponen" id="selectSparepart"
-                                class="hidden flex-1 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2.5 text-xs
-                                        text-white focus:border-blue-500 focus:outline-none">
-                                <option value="">-- Pilih Komponen (Potong Stok Otomatis) --</option>
-                            </select>
-                            <input type="number" name="jumlah_part" value="1" min="1"
-                                class="w-16 bg-[#0b0c0f] border border-gray-800 rounded-xl p-2
-                                        text-center text-xs text-white">
-                        </div>
+                            Tambah Komponen
+                        </button>
                     </div>
 
-                    {{-- Info stok & harga setelah pilih --}}
-                    <div id="sparepartInfo" class="hidden grid grid-cols-2 gap-2">
-                        <div class="bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5">
-                            <p class="text-[10px] text-gray-500 mb-0.5">Sisa Stok</p>
-                            <p id="infoStok" class="text-xs font-bold text-white">-</p>
-                        </div>
-                        <div class="bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5">
-                            <p class="text-[10px] text-gray-500 mb-0.5">Harga Satuan</p>
-                            <p id="infoHarga" class="text-xs font-bold text-blue-400">-</p>
-                        </div>
-                    </div>
-
+                    {{-- Catatan Akhir Perbaikan --}}
                     <div>
                         <label class="text-[10px] uppercase font-bold tracking-wider text-gray-500">
                             Catatan Akhir Perbaikan
@@ -658,16 +642,24 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
                                     text-xs text-white focus:border-blue-500 focus:outline-none resize-none"
                             placeholder="Contoh: Berhasil ganti IC Power dan re-pasta thermal..."></textarea>
                     </div>
+
                     <input type="hidden" name="kondisi" value="B">
                     <input type="hidden" name="status"  value="quality control">
                 </div>
             `;
+
+            // Footer tombol submit
             footer.innerHTML = `
                 <button type="submit"
                     class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-2 rounded-xl text-xs transition">
                     Kirim ke Quality Control
                 </button>
             `;
+
+            // Inisialisasi: tambahkan baris pertama
+            tambahBarisSparepart();
+
+            // Fetch data sparepart (diambil satu kali untuk semua baris)
             fetchSpareparts();
             break;
 
@@ -727,6 +719,153 @@ function renderFormByStatus(status, subStatus, waLocked, data) {
             `;
             break;
     }
+}
+
+// ── Variabel global untuk menyimpan daftar sparepart ──
+let sparepartData = [];
+
+// ── Override fetchSpareparts untuk menyimpan data ──
+const originalFetch = fetchSpareparts;
+fetchSpareparts = function() {
+    const API_URL = "{{ route('teknisi.api.spareparts') }}";
+    fetch(API_URL, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        sparepartData = data; // simpan global
+        // Inisialisasi semua dropdown yang sudah ada
+        document.querySelectorAll('.sparepart-select').forEach(select => {
+            populateSelect(select);
+        });
+    })
+    .catch(err => console.error('Gagal load sparepart:', err));
+};
+
+// ── Populate dropdown dengan data sparepart ──
+function populateSelect(select) {
+    // Bersihkan option bawaan
+    select.innerHTML = '';
+
+    // Tambahkan option placeholder dengan style gelap
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '-- Pilih Komponen --';
+    defaultOpt.style.backgroundColor = '#0b0c0f';
+    defaultOpt.style.color = '#9ca3af';
+    select.appendChild(defaultOpt);
+
+    // Loop sparepartData
+    sparepartData.forEach(part => {
+        const opt = document.createElement('option');
+        opt.value = part.id;
+        opt.textContent = part.label + (part.tersedia ? ` (Stok: ${part.stok})` : ' — HABIS');
+        // Terapkan style gelap
+        opt.style.backgroundColor = '#0b0c0f';
+        opt.style.color = '#e5e7eb';
+        opt.dataset.harga = part.harga;
+        opt.dataset.stok  = part.stok;
+        opt.dataset.label = part.label;
+
+        if (!part.tersedia) {
+            opt.disabled = true;
+            opt.style.color = '#6b7280';
+            opt.style.backgroundColor = '#1f2937';
+        }
+        select.appendChild(opt);
+    });
+}
+
+// ── Tambah baris sparepart ──
+function tambahBarisSparepart() {
+    const container = document.getElementById('sparepart-container');
+    if (!container) return;
+
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2 bg-[#0b0c0f] border border-gray-800 rounded-lg p-2.5 sparepart-row';
+
+    // Dropdown
+    const select = document.createElement('select');
+    select.name = 'id_komponen[]';
+    select.className = 'sparepart-select flex-1 bg-transparent border-none text-xs text-white focus:outline-none';
+    select.onchange = function() { onSparepartChangeRow(this); };
+    // Isi option dengan sparepartData jika sudah ada
+    if (sparepartData.length > 0) {
+        populateSelect(select);
+    } else {
+        // Jika data belum dimuat, tampilkan loading sementara
+        select.innerHTML = `<option value="">Memuat...</option>`;
+    }
+
+    // Input jumlah
+    const inputJumlah = document.createElement('input');
+    inputJumlah.type = 'number';
+    inputJumlah.name = 'jumlah_part[]';
+    inputJumlah.value = '1';
+    inputJumlah.min = '1';
+    inputJumlah.className = 'w-16 bg-transparent border border-gray-700 rounded-lg p-1.5 text-center text-xs text-white';
+
+    // Info stok/harga (ringkas) - bisa ditampilkan di bawah row, tapi kita sederhanakan
+    // Kita tampilkan info di bawah row dengan ID dinamis
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'text-[9px] text-gray-500 mt-0.5 col-span-full';
+    infoDiv.id = `info-${Date.now()}`;
+
+    // Tombol hapus
+    const btnHapus = document.createElement('button');
+    btnHapus.type = 'button';
+    btnHapus.className = 'text-red-400 hover:text-red-300 text-xs shrink-0';
+    btnHapus.innerHTML = '✕';
+    btnHapus.onclick = function() {
+        if (document.querySelectorAll('.sparepart-row').length > 1) {
+            row.remove();
+        } else {
+            alert('Minimal satu baris komponen.');
+        }
+    };
+
+    // Susun row: select, input, hapus
+    row.appendChild(select);
+    row.appendChild(inputJumlah);
+    row.appendChild(btnHapus);
+
+    container.appendChild(row);
+
+    // Jika data sparepart sudah ada, populate select (jika belum)
+    if (sparepartData.length > 0 && select.options.length <= 1) {
+        populateSelect(select);
+    }
+}
+
+// ── Saat sparepart dipilih di baris tertentu ──
+function onSparepartChangeRow(select) {
+    const row = select.closest('.sparepart-row');
+    if (!row) return;
+
+    const selectedOption = select.options[select.selectedIndex];
+    if (!select.value) {
+        // sembunyikan info jika tidak ada pilihan
+        const info = row.querySelector('.sparepart-info');
+        if (info) info.remove();
+        return;
+    }
+
+    // Tampilkan info stok/harga di bawah row
+    let info = row.querySelector('.sparepart-info');
+    if (!info) {
+        info = document.createElement('div');
+        info.className = 'sparepart-info text-[9px] text-gray-400 mt-1 flex gap-3';
+        row.appendChild(info);
+    }
+    const harga = parseInt(selectedOption.dataset.harga) || 0;
+    const stok  = parseInt(selectedOption.dataset.stok)  || 0;
+    info.innerHTML = `
+        <span>Stok: <strong class="text-white">${stok}</strong> unit</span>
+        <span>Harga: <strong class="text-blue-400">Rp ${harga.toLocaleString('id-ID')}</strong></span>
+    `;
 }
 
 // ── Build Footer Button sesuai kondisi yang dipilih ───────────────────

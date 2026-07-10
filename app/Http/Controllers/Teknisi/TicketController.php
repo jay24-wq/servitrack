@@ -141,33 +141,42 @@ class TicketController extends Controller
                 if ($service_ticket->status === 'pengerjaan') {
                     $request->validate([
                         'catatan_selesai' => ['required', 'string', 'max:2000'],
-                        'id_komponen'     => ['nullable', 'exists:spareparts,id'],
-                        'jumlah_part'     => ['nullable', 'integer', 'min:1'],
+                        'id_komponen'     => ['nullable', 'array'],
+                        'id_komponen.*'   => ['nullable', 'exists:spareparts,id'],
+                        'jumlah_part'     => ['nullable', 'array'],
+                        'jumlah_part.*'   => ['nullable', 'integer', 'min:1'],
                     ]);
 
-                    if ($request->filled('id_komponen')) {
-                        $sparepart = \App\Models\Sparepart::findOrFail($request->id_komponen);
+                    if ($request->has('id_komponen') && is_array($request->id_komponen)) {
+                        foreach ($request->id_komponen as $index => $id_komponen) {
+                            if (empty($id_komponen)) continue;
+                            $jumlah = $request->jumlah_part[$index] ?? 1;
 
-                        if ($sparepart->sparepart_stock < $request->jumlah_part) {
-                            throw \Illuminate\Validation\ValidationException::withMessages([
-                                'id_komponen' => "Stok {$sparepart->nama} tidak mencukupi. Sisa stok: {$sparepart->sparepart_stock} unit.",
+                            $sparepart = \App\Models\Sparepart::findOrFail($id_komponen);
+                            if ($sparepart->sparepart_stock < $jumlah) {
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'id_komponen' => "Stok {$sparepart->nama} tidak mencukupi. Sisa: {$sparepart->sparepart_stock} unit.",
+                                ]);
+                            }
+
+                            \App\Models\SparepartUsage::create([
+                                'service_ticket_id' => $service_ticket->id,
+                                'sparepart_id'      => $sparepart->id,
+                                'jumlah_digunakan'  => $jumlah,
+                                'total_harga'       => $sparepart->harga_satuan * $jumlah,
                             ]);
+
+                            $sparepart->decrement('sparepart_stock', $jumlah);
                         }
-
-                        \App\Models\SparepartUsage::create ([
-                            'service_ticket_id' => $service_ticket->id,
-                            'sparepart_id'      => $sparepart->id,
-                            'jumlah_digunakan'  => $request->jumlah_part,
-                            'total_harga'       => $sparepart->harga_satuan * $request->jumlah_part,
-                        ]);
-
-                        $sparepart->decrement('sparepart_stock', $request->jumlah_part);
                     }
+
+                    // ── Update status ke quality control ──
                     $service_ticket->update([
                         'status'          => 'quality control',
                         'sub_status'      => null,
                         'catatan_teknisi' => $service_ticket->catatan_teknisi . "\n\n[SELESAI] " . $request->catatan_selesai,
                     ]);
+
                     return;
                 }
 

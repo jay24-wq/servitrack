@@ -52,12 +52,6 @@
                     <i class="fa-solid fa-box-archive w-5"></i>
                     <span>Inventory</span>
                 </a>
-                <a href="#"
-                class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition
-                {{ request()->routeIs('admin.costumers*') ? 'bg-gradient-to-r from-indigo-600/10 to-transparent text-white border-l-2 border-indigo-500 rounded-r-lg' : 'text-gray-500 hover:text-gray-300' }}">
-                    <i class="fa-solid fa-users w-5"></i>
-                    <span>Customers</span>
-                </a>
                 <a href="{{ route('admin.staff') }}"
                 class="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-sm transition
                 {{ request()->routeIs('admin.staff*') ? 'bg-gradient-to-r from-indigo-600/10 to-transparent text-white border-l-2 border-indigo-500 rounded-r-lg' : 'text-gray-500 hover:text-gray-300' }}">
