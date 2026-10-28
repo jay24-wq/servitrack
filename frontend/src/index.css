@@ -1,0 +1,181 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --font-sans: "Google Sans Flex", system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    font-family: var(--font-sans);
+  }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: var(--font-sans);
+  }
+  input,
+  button,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+
+  .no-password-reveal::-ms-reveal,
+  .no-password-reveal::-ms-clear {
+    display: none;
+  }
+
+  .no-password-reveal::-webkit-credentials-auto-fill-button,
+  .no-password-reveal::-webkit-textfield-decoration-container {
+    visibility: hidden;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+  }
+
+  ::selection {
+    background-color: #bae6fd;
+    color: #0c4a6e;
+  }
+
+  .ledger-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #d6d3d1 transparent;
+  }
+  .ledger-scroll::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+  .ledger-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .ledger-scroll::-webkit-scrollbar-thumb {
+    background-color: #d6d3d1;
+    border: 2px solid #ffffff;
+    border-radius: 9999px;
+  }
+  .ledger-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: #a8a29e;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-up {
+    animation: reveal-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 28%;
+  }
+
+  .float-soft {
+    animation: float-soft 4s ease-in-out infinite;
+  }
+
+  .page-enter {
+    animation: page-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .page-enter-delay {
+    animation: page-enter 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+  }
+
+  .page-enter-delay-2 {
+    animation: page-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.7s both;
+  }
+
+  .pop-in {
+    animation: pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+  }
+
+  .stamp-press {
+    animation: stamp-press 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ink-mark {
+    animation: ink-mark 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .sheet-head-flip {
+    animation: sheet-head-flip 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes stamp-press {
+    0% {
+      opacity: 0;
+      transform: scale(1.4) rotate(-7deg);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(0.96) rotate(1deg);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
+  @keyframes ink-mark {
+    from {
+      opacity: 0;
+      transform: translateX(-4px) scale(0.7);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @keyframes sheet-head-flip {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes reveal-up {
+    from {
+      opacity: 0;
+      transform: translateY(28px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes float-soft {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}

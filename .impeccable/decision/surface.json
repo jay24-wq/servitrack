@@ -1,0 +1,74 @@
+{
+  "title": "Komposisi dashboard ServiTrack",
+  "question": "Tiga struktur di dalam world ServiTrack yang sudah settle (sky/stone, Google Sans Flex, ikon Phosphor). Semua kartu memuat blok yang diminta: 4 metrik uang, tren pendapatan, parts terlaris, log aktivitas, tabel tiket. Pilih satu komposisi untuk dibangun.",
+  "options": [
+    {
+      "id": "rekap-sheet",
+      "label": "Lembar Rekap Mingguan",
+      "kicker": "THE ROLL",
+      "thesis": "Dashboard adalah lembar rekap yang owner tanda-tangani tiap minggu: uang di kolom, pekerjaan di baris, tidak ada yang disembunyikan.",
+      "palette": ["#0284c7", "#0ea5e9", "#f59e0b", "#e7e5e4"],
+      "materials": ["kertas ber-garis rambut", "angka tabular", "blok stempel servis"],
+      "viewport": "Satu lembar penuh layar: strip minggu + total uang di atas, tabel rekap per teknisi & status mengisi badan lembar, kolom kanan untuk tren dan parts.",
+      "risk": "Badan tabel bisa terbaca datar kalau strip total tidak membawa hirarki; chart berisiko terasa lampiran.",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "rel tab modul + logo", "x": 0, "y": 0, "w": 1, "h": 10 },
+          { "label": "strip minggu, pencarian, plan, notif, avatar", "x": 1, "y": 0, "w": 11, "h": 1 },
+          { "label": "strip total: omzet / piutang / kas hari ini / stok kritis", "x": 1, "y": 1, "w": 11, "h": 2, "accent": true },
+          { "label": "tabel rekap tiket per teknisi & status", "x": 1, "y": 3, "w": 7, "h": 7 },
+          { "label": "grafik tren pendapatan", "x": 8, "y": 3, "w": 4, "h": 3 },
+          { "label": "parts terlaris + stok menipis", "x": 8, "y": 6, "w": 4, "h": 2 },
+          { "label": "log aktivitas terbaru", "x": 8, "y": 8, "w": 4, "h": 2 }
+        ]
+      }
+    },
+    {
+      "id": "meja-kasir",
+      "label": "Meja Kasir",
+      "thesis": "Dashboard adalah meja kasir: uang hari ini di kompartemen laci, tiket hari ini mengantre di tepi depannya.",
+      "palette": ["#0284c7", "#0ea5e9", "#f59e0b", "#e7e5e4"],
+      "materials": ["baki laci terbuka", "tumpukan slip nota", "kaca counter"],
+      "viewport": "Permukaan meja melintang layar: empat kompartemen laci memegang angka uang, antrian slip tiket mengalir di tepi depan, tren dan parts di bawah meja.",
+      "risk": "Metafora meja bisa mengubur grafik tren; laci yang terlalu literal berhenti jadi antarmuka.",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "rel navigasi mesin kasir", "x": 0, "y": 0, "w": 2, "h": 10 },
+          { "label": "header: pencarian, plan, notif, avatar", "x": 2, "y": 0, "w": 10, "h": 1 },
+          { "label": "laci uang: 4 kompartemen metrik", "x": 2, "y": 1, "w": 10, "h": 3, "accent": true },
+          { "label": "antrian slip tiket hari ini", "x": 2, "y": 4, "w": 10, "h": 3 },
+          { "label": "grafik tren pendapatan", "x": 2, "y": 7, "w": 6, "h": 3 },
+          { "label": "parts terlaris + log aktivitas", "x": 8, "y": 7, "w": 4, "h": 3 }
+        ]
+      }
+    },
+    {
+      "id": "rak-bin",
+      "label": "Rak Bin Suku Cadang",
+      "thesis": "Dashboard adalah rak parts: bin berlabel dalam grid padat, jumlah di tag, bin yang menipis dibalik ke sisi peringatan.",
+      "palette": ["#0284c7", "#0ea5e9", "#f59e0b", "#e7e5e4"],
+      "materials": ["bin plastik berlabel", "tag gantung", "rak besi bolong"],
+      "viewport": "Grid bin berlabel memenuhi layar, rail tipis berisi uang & tiket hari ini melintang di atas, tren dan log menempati kolom kanan.",
+      "risk": "Grid padat meratakan prioritas: setiap bin terlihat sama penting sampai peringatan stok muncul.",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "rel navigasi rak", "x": 0, "y": 0, "w": 2, "h": 10 },
+          { "label": "header: pencarian, plan, notif, avatar", "x": 2, "y": 0, "w": 10, "h": 1 },
+          { "label": "rail uang & tiket hari ini", "x": 2, "y": 1, "w": 10, "h": 2, "accent": true },
+          { "label": "grid bin parts + penanda stok kritis", "x": 2, "y": 3, "w": 6, "h": 7 },
+          { "label": "grafik tren pendapatan", "x": 8, "y": 3, "w": 4, "h": 3 },
+          { "label": "log aktivitas terbaru", "x": 8, "y": 6, "w": 4, "h": 4 }
+        ]
+      }
+    }
+  ],
+  "reroll": true,
+  "steer": true,
+  "buildPath": { "value": "code", "toggle": false }
+}

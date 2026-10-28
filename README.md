@@ -1,47 +1,77 @@
-# ServiTrack : Sistem Manajemen Repair Center
+# ServiTrack - Reparasi Transparan
 
-ServiTrack adalah sistem manajemen pusat perbaikan elektronik berbasis web yang dirancang untuk meningkatkan transparansi informasi antara penyedia jasa dan pelanggan. Sistem ini mengintegrasikan **check-in digital, nota digital otomatis, kanban board teknisi, live tracking portal, quotation approval, manajemen inventaris suku cadang, dan pembayaran** dalam satu ekosistem.
+Platform SaaS multi-tenant untuk manajemen servis perangkat elektronik dengan fitur tracking real-time, WhatsApp integration, dan quotation approval digital.
 
-Platform ini dibangun menggunakan **Laravel 12 (PHP 8.2)** dengan antarmuka modern berbasis **TailwindCSS + Alpine.js**, serta integrasi layanan eksternal seperti **WhatsApp Business API, dan AWS S3** untuk penyimpanan foto dokumentasi.
+## Stack
 
----
+### Frontend
+- **Framework**: React 19 + Vite
+- **Styling**: Tailwind CSS v4
+- **Router**: React Router v7
+- **State**: Zustand
+- **Data Fetching**: TanStack Query
+- **Icons**: Phosphor Icons
 
-## 🚀 Fitur Utama
-- **Check-in Digital**: Penerimaan perangkat dengan identitas pemilik perangkat, identitas perangkat, dokumentasi foto, dan catatan keluhan.
-- **Nota Digital Otomatis**: Bukti penerimaan dikirim via WhatsApp/Email segera setelah check-in.
-- **Kanban Board Teknisi**: Visualisasi status pekerjaan (Antrian → Pengecekan → Menunggu Part → Pengerjaan → Quality Check → Selesai → Siap Diambil).
-- **Live Tracking Portal**: Pelanggan dapat memantau progres perbaikan real-time menggunakan nomor resi tanpa login.
-- **Quotation Approval**: Persetujuan biaya tambahan secara digital oleh pelanggan.
-- **Manajemen Inventaris**: Pencatatan stok suku cadang, peringatan stok menipis, dan log penggunaan per tiket.
-- **Pembayaran & Laporan**: Transaksi akhir dan laporan pendapatan otomatis.
+### Backend
+- **Runtime**: Node.js + TypeScript
+- **Framework**: Express.js
+- **Database**: PostgreSQL
+- **Cache/Queue**: Redis + BullMQ
+- **Storage**: S3-compatible (MinIO local)
+- **Auth**: JWT + Argon2
 
----
+### Infrastructure
+- **Container**: Docker & Docker Compose
+- **Storage**: MinIO (S3-compatible)
+- **Monitoring**: Winston (logging)
 
-## 👥 Pengguna Sistem
-- **Administrator / Manajer**: Mengelola data karyawan, manajemen Tiket (Daftar Antrean), laporan pendapatan, dan inventaris.
-- **Front Desk**: Melakukan check-in digital, dokumentasi foto, nota digital, dan pembayaran.
-- **Teknisi**: Memperbarui status pekerjaan, mencatat kerusakan, mengajukan quotation, dan mencatat penggunaan sparepart.
-- **Pelanggan**: Melacak status perbaikan via portal dan menyetujui/menolak quotation.
+## Quick Start
 
----
+```bash
+# Start infrastructure
+docker-compose up -d
 
-## 💻 Instalasi Lokal (Development)
-1. **Kloning repositori**
-   ```bash
-   git clone https://github.com/jay24-wq/servitrack.git
-   cd servitrack
-2. **Salin dan konfigurasi environment**
-   ```bash
-   cp .env.example .env
-4. **Unduh dependensi**
-   ```bash
-   composer install
-   npm install
-6. **Generate key & migrasi database**
-   ```bash
-   php artisan key:generate
-   php artisan migrate --seed
-8. **Kompilasi aset & jalankan server**
-   ```bash
-   npm run dev
-   php artisan serve
+# Backend setup
+cd backend
+cp .env.example .env
+npm install
+npm run db:migrate
+npm run db:seed
+npm run dev
+
+# Frontend setup
+cd ../frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` untuk akses frontend.
+
+## Struktur Project
+
+```
+servitrack/
+├── backend/          # Backend API (modular monolith)
+├── frontend/         # Frontend SPA (React + Vite)
+├── common/           # Shared types & utils
+├── docs/             # Documentation
+├── scripts/          # Deployment & seed scripts
+├── docker-compose.yml
+└── .env.example
+```
+
+## Fitur Utama
+
+- 📱 Booking slot & tracking real-time
+- 📊 Dashboard untuk Admin, Frontdesk, Teknisi, Kurir
+- 📱 WhatsApp notification integration
+- 💰 Quotation approval digital
+- 📦 Inventory management
+- 📈 Reports & analytics
+- 🔐 RBAC dengan plan guard
+- 🌐 Multi-tenant architecture
+
+## License
+
+© 2026 ServiTrack - Kelompok 2 DPBP
