@@ -5,6 +5,7 @@ import request from 'supertest';
 import app from '../src/server';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { appConfig } from '../config/app';
 
 describe('Ticket Closure, Dashboard, Export', () => {
   let tenantId: string;
@@ -38,7 +39,7 @@ describe('Ticket Closure, Dashboard, Export', () => {
       const [d] = await trx('devices').insert({ tenant_id: tenantId, customer_id: customerId, category: 'hp', brand: 'X' }).returning('id');
       deviceId = d.id;
     });
-    token = jwt.sign({ user_id: userId, tenant_id: tenantId, role: 'admin', email: 'admin@close.test' }, process.env.JWT_SECRET || 'servitrack-dev-jwt-secret-change-me', { expiresIn: '1h' });
+    token = jwt.sign({ user_id: userId, tenant_id: tenantId, role: 'admin', email: 'admin@close.test' }, appConfig.jwtSecret, { expiresIn: '1h' });
   });
 
   afterAll(async () => {

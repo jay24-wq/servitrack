@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import db from '@models/index';
+import { appConfig } from '@config/app';
 /**
  * Middleware Autentikasi JWT:
  * 1. Mengekstrak Bearer token dari header Authorization.
@@ -14,8 +15,7 @@ export function authMiddleware(req, res, next) {
     }
     const token = authHeader.substring(7);
     try {
-        const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
-        const decoded = jwt.verify(token, secret);
+        const decoded = jwt.verify(token, appConfig.jwtSecret);
         req.user = decoded;
         next();
     }

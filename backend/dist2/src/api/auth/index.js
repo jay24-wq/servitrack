@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@models/index';
 import { authMiddleware } from '@middleware/AuthMiddleware';
+import { appConfig } from '@config/app';
 export const authRouter = Router();
 /**
  * POST /api/auth/register
@@ -163,7 +164,6 @@ authRouter.post('/login', async (req, res) => {
             return;
         }
         await db('users').where({ id: user.user_id }).update({ last_login_at: new Date() });
-        const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
         // JWT Payload dengan tenant_id secara eksplisit
         const payload = {
             user_id: user.user_id,
@@ -173,7 +173,7 @@ authRouter.post('/login', async (req, res) => {
             tenant_id: user.tenant_id,
             plan: user.plan_code || undefined,
         };
-        const token = jwt.sign(payload, jwtSecret, { expiresIn: '24h' });
+        const token = jwt.sign(payload, appConfig.jwtSecret, { expiresIn: '24h' });
         res.json({
             message: 'Login berhasil',
             token,

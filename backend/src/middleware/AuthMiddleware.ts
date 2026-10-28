@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '@models/index';
+import { appConfig } from '@config/app';
 
 export interface UserPayload {
   user_id: string;
@@ -36,8 +37,7 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   const token = authHeader.substring(7);
 
   try {
-    const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
-    const decoded = jwt.verify(token, secret) as UserPayload;
+    const decoded = jwt.verify(token, appConfig.jwtSecret) as UserPayload;
 
     req.user = decoded;
     next();
