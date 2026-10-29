@@ -3,6 +3,15 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { addInventoryStock, createPart, getInventoryParts, deletePart, updatePart } from "../../lib/api";
 import { Button } from "../../components/ui/button";
+import { Input } from '../../components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
+import { cn } from '../../lib/utils';
 import { useAuthStore } from "../../store";
 import TambahStokModal from "./TambahStokModal";
 import MutasiModal from "./MutasiModal";
@@ -195,13 +204,83 @@ export default function InventoryPage() {
       <div className="flex flex-col gap-3 rounded-xl border border-black/10 bg-white p-2 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] md:flex-row md:items-center md:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <div className="relative min-w-60 flex-1">
-            <Ico name="search" size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
-            <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari suku cadang atau ID..." className="h-11 w-full rounded-lg border-black/10 bg-stone-50 pl-10 pr-4 text-sm text-neutral-900 shadow-none placeholder:text-stone-400 focus-visible:border-sky-500" />
+            <MagnifyingGlass name="search" size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
+            <Input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari suku cadang atau ID..." className="h-auto w-full rounded-lg border-black/10 bg-white py-1.5 pl-8 pr-3 text-xs text-neutral-900 caret-sky-600 shadow-none placeholder:text-neutral-400 focus-visible:border-sky-500" />
           </div>
-           <SelectField ariaLabel="Filter kategori" value={category} onChange={setCategory} options={categoryOptions} className="w-44" />
-           <SelectField ariaLabel="Filter status part" value={inventoryStatus} onChange={(value) => { setInventoryStatus(value); setPage(1); }} options={INVENTORY_STATUS_OPTIONS} className="w-44" />
-           <SelectField ariaLabel="Filter status stok" value={status} onChange={setStatus} options={STATUS_OPTIONS} className="w-44" />
-          <SelectField ariaLabel="Urutkan" value={sort} onChange={setSort} options={SORT_OPTIONS} className="w-52" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-normal text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
+                {categoryOptions.find(o => o.value === category)?.label || 'Kategori'}
+                <CaretDown weight="bold" className="size-3.5 text-neutral-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-stone-400">Filter Kategori</DropdownMenuLabel>
+              {categoryOptions.map((option) => (
+                <DropdownMenuItem key={option.value} onSelect={() => { setCategory(option.value); setPage(1); }}>
+                  <span className={category === option.value ? 'flex-1 font-bold text-sky-700' : 'flex-1'}>
+                    {option.label}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Filter Status Part */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-normal text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
+                {INVENTORY_STATUS_OPTIONS.find(o => o.value === inventoryStatus)?.label || 'Status Part'}
+                <CaretDown weight="bold" className="size-3.5 text-neutral-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-stone-400">Status Part</DropdownMenuLabel>
+              {INVENTORY_STATUS_OPTIONS.map((option) => (
+                <DropdownMenuItem key={option.value} onSelect={() => { setInventoryStatus(option.value); setPage(1); }}>
+                  <span className={inventoryStatus === option.value ? 'flex-1 font-bold text-sky-700' : 'flex-1'}>
+                    {option.label}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Filter Status Stok */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-normal text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
+                {STATUS_OPTIONS.find(o => o.value === status)?.label || 'Status Stok'}
+                <CaretDown weight="bold" className="size-3.5 text-neutral-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-stone-400">Status Stok</DropdownMenuLabel>
+              {STATUS_OPTIONS.map((option) => (
+                <DropdownMenuItem key={option.value} onSelect={() => { setStatus(option.value); setPage(1); }}>
+                  <span className={status === option.value ? 'flex-1 font-bold text-sky-700' : 'flex-1'}>
+                    {option.label}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-normal text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
+                {SORT_OPTIONS.find((item) => item.value === sort)?.label}
+                <CaretDown weight="bold" className="size-3.5 text-neutral-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {SORT_OPTIONS.map((item) => (
+                <DropdownMenuItem key={item.value} onSelect={() => { setSort(item.value); setPage(1); }}>
+                  <span className={cn('flex-1', sort === item.value && 'font-bold text-sky-700')}>{item.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs leading-4 text-stone-500">Filter Aktif: <span className="font-medium text-zinc-900">{activeFilters ? `${activeFilters} filter` : "Semua"}</span></span>

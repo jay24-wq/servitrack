@@ -526,7 +526,7 @@ export default function QueuePage() {
               onChange={(event) => setQuery(event.target.value)}
               aria-label="Cari nomor tiket, nomor resi, nama pelanggan, nomor WhatsApp, atau perangkat"
               placeholder="Cari tiket, resi, pelanggan, WhatsApp, atau perangkat."
-              className="h-auto rounded-lg border-transparent bg-stone-100 py-2.5 pl-9 pr-4 text-sm text-neutral-900 caret-sky-600 shadow-none placeholder:text-stone-500 focus-visible:border-sky-500"
+              className="h-auto w-full rounded-lg border-black/10 bg-white py-1.5 pl-8 pr-3 text-xs text-neutral-900 caret-sky-600 shadow-none placeholder:text-neutral-400 focus-visible:border-sky-500"
             />
           </div>
 
@@ -535,7 +535,7 @@ export default function QueuePage() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-neutral-900 transition-colors hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                  className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-normal text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                 >
                   Status {statusFilter === 'Semua' ? `semua (${tickets.length})` : `${statusFilter} (${countByStatus(statusFilter as Status)})`}
                   <CaretDown weight="bold" className="size-4 text-stone-500" />
@@ -561,7 +561,7 @@ export default function QueuePage() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-neutral-900 transition-colors hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                  className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-normal text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                 >
                   Teknisi {techFilter === 'Semua' ? 'semua' : techFilter}
                   <CaretDown weight="bold" className="size-4 text-stone-500" />
