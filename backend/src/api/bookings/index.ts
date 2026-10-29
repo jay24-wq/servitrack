@@ -1,6 +1,5 @@
 import { Router, Response } from 'express';
-import db from '@models/index';
-import { authMiddleware, AuthRequest, withTenantContext } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 import { generateBookingCode, generateTrackingCode } from '@utils/code';
 import { normalizePickupArea, normalizePickupTime } from '@utils/booking';
@@ -14,6 +13,7 @@ export const bookingRouter = Router();
 
 bookingRouter.use(authMiddleware);
 bookingRouter.use(tenantResolver);
+bookingRouter.use(branchResolver);
 
 // GET /api/bookings - List booking
 bookingRouter.get('/', async (req: AuthRequest, res: Response) => {
@@ -21,7 +21,7 @@ bookingRouter.get('/', async (req: AuthRequest, res: Response) => {
     const tenant_id = req.user?.tenant_id;
     const query = reqDb(req);
     const bookings = await query('bookings')
-      .where({ 'bookings.tenant_id': tenant_id })
+      .where({ 'bookings.tenant_id': tenant_id, 'bookings.branch_id': req.user?.branch_id })
       .leftJoin('customers', 'bookings.customer_id', 'customers.id')
       .leftJoin('devices', 'bookings.device_id', 'devices.id')
       .leftJoin('booking_slots', 'bookings.slot_id', 'booking_slots.id')
@@ -54,7 +54,8 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const { branch_id, customer_id, device_id, slot_id, service_method, complaint } = req.body;
+    const { customer_id, device_id, slot_id, service_method, complaint } = req.body;
+    const branch_id = req.user?.branch_id;
 
     if (!branch_id || !customer_id || !device_id || !slot_id || !service_method) {
       res.status(400).json({ error: 'branch_id, customer_id, device_id, slot_id, service_method wajib diisi' });
@@ -196,7 +197,7 @@ bookingRouter.put('/:id', async (req: AuthRequest, res: Response) => {
     const pickupAreaSafe = pickup_area === undefined ? undefined : normalizePickupArea(pickup_area);
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const existing = await trx('bookings').where({ id, tenant_id }).first();
+      const existing = await trx('bookings').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!existing) {
         throw Object.assign(new Error('Booking tidak ditemukan'), { status: 404 });
       }
@@ -213,7 +214,7 @@ bookingRouter.put('/:id', async (req: AuthRequest, res: Response) => {
           : undefined;
 
       const [updated] = await trx('bookings')
-        .where({ id, tenant_id })
+        .where({ id, tenant_id, branch_id: req.user?.branch_id })
         .update({
           ...(status && { status }),
           ...(scheduled_at !== undefined && { scheduled_at: scheduled_at ? new Date(scheduled_at) : null }),
@@ -337,7 +338,7 @@ bookingRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
 
-    const deleted = await db('bookings').where({ id, tenant_id }).delete();
+    const deleted = await reqDb(req)('bookings').where({ id, tenant_id, branch_id: req.user?.branch_id }).delete();
     if (!deleted) {
       res.status(404).json({ error: 'Booking tidak ditemukan' });
       return;

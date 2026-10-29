@@ -32,7 +32,7 @@ statusRouter.put('/:id/assign', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const existingTicket = await reqDb(req)('service_tickets').where({ id, tenant_id }).first();
+    const existingTicket = await reqDb(req)('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
     if (!existingTicket) {
       res.status(404).json({ error: 'Tiket tidak ditemukan' });
       return;
@@ -42,6 +42,7 @@ statusRouter.put('/:id/assign', async (req: AuthRequest, res: Response) => {
     const result = await withTenantContext(tenant_id, (trx) =>
       assignTechnicianManually(trx, {
         tenantId: tenant_id,
+        branchId: req.user!.branch_id!,
         ticketId: id,
         technicianId: technician_id.trim(),
         assignedBy: req.user!.user_id,

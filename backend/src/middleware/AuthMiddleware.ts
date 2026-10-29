@@ -46,6 +46,36 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   }
 }
 
+/** Resolve branch authorization from the database, never from request input. */
+export async function branchResolver(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const tenant_id = req.user?.tenant_id;
+    const user_id = req.user?.user_id;
+    if (!tenant_id || !user_id) {
+      res.status(401).json({ error: 'Identitas tenant atau pengguna tidak ditemukan' });
+      return;
+    }
+
+    const query = req.db ?? db;
+    const user = await query('users').where({ id: user_id, tenant_id, is_active: true }).select('branch_id').first();
+    if (!user?.branch_id) {
+      res.status(403).json({ error: 'Pengguna belum memiliki cabang yang terotorisasi' });
+      return;
+    }
+
+    const branch = await query('branches').where({ id: user.branch_id, tenant_id, is_active: true }).first();
+    if (!branch) {
+      res.status(403).json({ error: 'Cabang pengguna tidak aktif atau tidak valid' });
+      return;
+    }
+
+    req.user!.branch_id = branch.id;
+    next();
+  } catch {
+    res.status(500).json({ error: 'Gagal memvalidasi cabang pengguna' });
+  }
+}
+
 /**
  * Middleware otorisasi berbasis role.
  * Role dari JWT disimpan lowercase (mis. "admin"), tetapi pembandingan

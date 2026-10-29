@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
-import { authMiddleware, AuthRequest, requireRole } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, requireRole } from '@middleware/AuthMiddleware';
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 
 export const dashboardRouter = Router();
 dashboardRouter.use(authMiddleware);
 dashboardRouter.use(requireRole('admin', 'frontdesk'));
 dashboardRouter.use(tenantResolver);
+dashboardRouter.use(branchResolver);
 
 dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
@@ -16,22 +17,23 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
     }
     const dbq = reqDb(req);
 
-    const [ticketNew] = await dbq('service_tickets').where({ tenant_id }).where('current_status', 'antrian').count('* as c');
-    const [waitingParts] = await dbq('service_tickets').where({ tenant_id }).where('current_status', 'menunggu_part').count('* as c');
-    const [completedToday] = await dbq('service_tickets').where({ tenant_id }).whereIn('current_status', ['selesai', 'siap_diambil']).whereRaw("completed_at::date = current_date").count('* as c');
+    const branch = req.user?.branch_id;
+    const [ticketNew] = await dbq('service_tickets').where({ tenant_id, branch_id: branch }).where('current_status', 'antrian').count('* as c');
+    const [waitingParts] = await dbq('service_tickets').where({ tenant_id, branch_id: branch }).where('current_status', 'menunggu_part').count('* as c');
+    const [completedToday] = await dbq('service_tickets').where({ tenant_id, branch_id: branch }).whereIn('current_status', ['selesai', 'siap_diambil']).whereRaw("completed_at::date = current_date").count('* as c');
 
-    const [rev] = await dbq('invoices').where({ tenant_id, status: 'paid' }).whereRaw("issued_at >= date_trunc('month', current_date)").sum('total as s');
+    const [rev] = await dbq('invoices as i').join('service_tickets as t', 't.id', 'i.ticket_id').where({ 'i.tenant_id': tenant_id, 'i.status': 'paid', 't.branch_id': branch }).whereRaw("i.issued_at >= date_trunc('month', current_date)").sum('i.total as s');
     const revenueMtd = Number(rev?.s) || 0;
 
     async function trend(days: number) {
       const rowsMasuk = await dbq('service_tickets')
-        .where({ tenant_id })
+        .where({ tenant_id, branch_id: branch })
         .whereRaw(`created_at >= current_date - interval '${days - 1} days'`)
         .select(dbq.raw("created_at::date as d"))
         .count('* as c')
         .groupByRaw("created_at::date");
       const rowsSelesai = await dbq('service_tickets')
-        .where({ tenant_id })
+        .where({ tenant_id, branch_id: branch })
         .whereRaw(`completed_at >= current_date - interval '${days - 1} days'`)
         .select(dbq.raw("completed_at::date as d"))
         .count('* as c')
@@ -54,7 +56,7 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
     const trend30 = await trend(30);
 
     const lowStockRow = await dbq('parts')
-      .where({ tenant_id })
+      .where({ tenant_id, branch_id: branch })
       .whereRaw('stock_qty <= min_stock_qty')
       .select('name', 'stock_qty as remaining', 'min_stock_qty as min')
       .orderBy('stock_qty', 'asc')
@@ -65,13 +67,13 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
       : null;
 
     const technicians = await dbq('users')
-      .where({ tenant_id, role: 'teknisi', is_active: true })
+      .where({ tenant_id, branch_id: branch, role: 'teknisi', is_active: true })
       .select('id', 'name');
 
     const bench = [];
     for (const t of technicians.slice(0, 3)) {
       const [agg] = await dbq('service_tickets')
-        .where({ tenant_id, technician_id: t.id })
+        .where({ tenant_id, branch_id: branch, technician_id: t.id })
         .whereIn('current_status', ['antrian', 'pengecekan', 'menunggu_part', 'pengerjaan', 'quality_check'])
         .count('* as c');
       bench.push({ name: t.name, status: Number(agg?.c) > 3 ? 'bg-amber-400' : 'bg-emerald-500' });
@@ -79,6 +81,7 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
 
     const statusLogs = await dbq('ticket_status_logs as l')
       .where('l.tenant_id', tenant_id)
+      .where('t.branch_id', branch)
       .leftJoin('service_tickets as t', 't.id', 'l.ticket_id')
       .leftJoin('users as u', 'u.id', 'l.changed_by')
       .select('l.to_status', 'l.created_at', 't.ticket_code', 't.complaint', 'u.name as actor')
@@ -110,7 +113,7 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
 
     const activeTechnicians = technicians.length;
     const activeTickets = await dbq('service_tickets')
-      .where({ tenant_id })
+      .where({ tenant_id, branch_id: branch })
       .whereIn('current_status', ['antrian', 'pengecekan', 'menunggu_part', 'pengerjaan', 'quality_check'])
       .count('* as c');
     const totalActiveTickets = Number(activeTickets?.[0]?.c) || 0;

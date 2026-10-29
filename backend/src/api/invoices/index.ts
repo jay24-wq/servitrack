@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authMiddleware, AuthRequest, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 
 export const invoiceRouter = Router();
@@ -7,6 +7,7 @@ export const invoiceRouter = Router();
 invoiceRouter.use(authMiddleware);
 invoiceRouter.use(requireRole('admin', 'frontdesk'));
 invoiceRouter.use(tenantResolver);
+invoiceRouter.use(branchResolver);
 
 // POST /api/invoices - generate invoice from ticket
 invoiceRouter.post('/', async (req: AuthRequest, res: Response) => {
@@ -24,14 +25,15 @@ invoiceRouter.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const ticket = await trx('service_tickets').where({ id: ticket_id, tenant_id }).first();
+      const ticket = await trx('service_tickets').where({ id: ticket_id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!ticket) throw new Error('Tiket tidak ditemukan');
 
-      const existing = await trx('invoices').where({ ticket_id }).first();
+       const existing = await trx('invoices as i').join('service_tickets as t', 't.id', 'i.ticket_id')
+         .where({ 'i.ticket_id': ticket_id, 'i.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id }).first();
       if (existing) throw new Error('Tiket sudah memiliki invoice');
 
       const booking = ticket.booking_id
-        ? await trx('bookings').where({ id: ticket.booking_id, tenant_id }).first()
+        ? await trx('bookings').where({ id: ticket.booking_id, tenant_id, branch_id: req.user?.branch_id }).first()
         : null;
       const pickupFee = Number(booking?.pickup_fee ?? 0);
       const addCost = additional_cost || 0;
@@ -73,6 +75,7 @@ invoiceRouter.get('/', async (req: AuthRequest, res: Response) => {
     const invoices = await reqDb(req)('invoices as i')
       .where('i.tenant_id', tenant_id)
       .leftJoin('service_tickets as t', 't.id', 'i.ticket_id')
+      .where('t.branch_id', req.user?.branch_id)
       .leftJoin('customers as c', 'c.id', 't.customer_id')
       .select(
         'i.*',
@@ -95,7 +98,8 @@ invoiceRouter.get('/:id', async (req: AuthRequest, res: Response) => {
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
     const invoice = await withTenantContext(tenant_id!, async (trx) => {
-      return trx('invoices').where({ id, tenant_id }).first();
+      return trx('invoices as i').join('service_tickets as t', 't.id', 'i.ticket_id')
+        .where({ 'i.id': id, 'i.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id }).select('i.*').first();
     });
 
     if (!invoice) {

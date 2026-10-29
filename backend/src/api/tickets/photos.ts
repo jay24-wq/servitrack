@@ -31,7 +31,7 @@ photosRouter.post('/:id/photos', async (req: AuthRequest, res: Response) => {
     }
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const ticket = await trx('service_tickets').where({ id, tenant_id }).first();
+      const ticket = await trx('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!ticket) {
         throw new Error('Tiket tidak ditemukan');
       }

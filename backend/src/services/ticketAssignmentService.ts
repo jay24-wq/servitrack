@@ -10,6 +10,7 @@ import {
 
 export interface ManualAssignmentInput {
   tenantId: string;
+  branchId: string;
   ticketId: string;
   technicianId: string;
   assignedBy: string;
@@ -42,9 +43,9 @@ function cleanNote(note?: string) {
   return value ? value.slice(0, 500) : null;
 }
 
-export async function pickAutoTechnician(trx: Knex.Transaction, tenantId: string) {
-  await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`ticket-auto-assign:${tenantId}`]);
-  return findLeastLoadedTechnician(trx, tenantId);
+export async function pickAutoTechnician(trx: Knex.Transaction, tenantId: string, branchId: string) {
+  await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`ticket-auto-assign:${branchId}`]);
+  return findLeastLoadedTechnician(trx, tenantId, branchId);
 }
 
 export async function logAutomaticAssignment(
@@ -98,13 +99,13 @@ export async function assignTechnicianManually(
   input: ManualAssignmentInput
 ): Promise<ManualAssignmentResult> {
   const tenantId = input.tenantId;
-  const technician = await findActiveTechnician(trx, tenantId, input.technicianId);
+  const technician = await findActiveTechnician(trx, tenantId, input.technicianId, input.branchId);
   if (!technician) {
     throw serviceError('Teknisi tidak ditemukan atau tidak aktif', 400);
   }
 
   const ticket = await trx('service_tickets')
-    .where({ id: input.ticketId, tenant_id: tenantId })
+    .where({ id: input.ticketId, tenant_id: tenantId, branch_id: input.branchId })
     .forUpdate()
     .first();
   if (!ticket) {
@@ -139,7 +140,7 @@ export async function assignTechnicianManually(
   if (input.nextStatus) updateData.current_status = input.nextStatus;
 
   const [updated] = await trx('service_tickets')
-    .where({ id: input.ticketId, tenant_id: tenantId })
+    .where({ id: input.ticketId, tenant_id: tenantId, branch_id: input.branchId })
     .update(updateData)
     .returning('*');
 
@@ -183,6 +184,6 @@ export async function assignTechnicianManually(
   };
 }
 
-export async function getTechnicianWorkload(executor: Knex, tenantId: string) {
-  return listTechnicianWorkload(executor, tenantId);
+export async function getTechnicianWorkload(executor: Knex, tenantId: string, branchId: string) {
+  return listTechnicianWorkload(executor, tenantId, branchId);
 }

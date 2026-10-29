@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import db from '@models/index';
 import crypto from 'crypto';
-import { authMiddleware, AuthRequest, withTenantContext } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver } from '@middleware/TenantResolver';
 import { notifyQuotationCreated } from '@services/notifications/events';
 
@@ -9,6 +9,7 @@ export const quotationRouter = Router();
 
 quotationRouter.use(authMiddleware);
 quotationRouter.use(tenantResolver);
+quotationRouter.use(branchResolver);
 
 // POST /api/quotations - create quotation
 quotationRouter.post('/', async (req: AuthRequest, res: Response) => {
@@ -26,7 +27,7 @@ quotationRouter.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const ticket = await trx('service_tickets').where({ id: ticket_id, tenant_id }).first();
+       const ticket = await trx('service_tickets').where({ id: ticket_id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!ticket) throw new Error('Tiket tidak ditemukan');
 
       let total = 0;
@@ -34,7 +35,7 @@ quotationRouter.post('/', async (req: AuthRequest, res: Response) => {
       const processed = [];
       for (const item of items) {
         if (item.item_type === 'part' && item.part_id) {
-          const part = await trx('parts').where({ id: item.part_id, tenant_id }).first();
+           const part = await trx('parts').where({ id: item.part_id, tenant_id, branch_id: req.user?.branch_id }).first();
           if (!part) throw new Error('Part tidak ditemukan');
           item.unit_price = part.sell_price;
         } else if (!item.unit_price) {
@@ -102,7 +103,8 @@ quotationRouter.post('/:id/approve', async (req: AuthRequest, res: Response) => 
     const { id } = req.params;
 
     const [updated] = await db('quotations')
-      .where({ id, tenant_id })
+       .where({ id, tenant_id })
+      .whereExists(function () { this.select('*').from('service_tickets').whereRaw('service_tickets.id = quotations.ticket_id').where({ branch_id: req.user?.branch_id }); })
       .update({ status: 'approved', decided_at: new Date() })
       .returning('*');
 

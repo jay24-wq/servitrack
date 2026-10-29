@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import db from '@models/index';
-import { authMiddleware, AuthRequest, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 import { generateTicketCode, generateTrackingCode, generateTrackingToken } from '@utils/code';
 import { logBookingEvent } from '@repositories/bookingTimelineRepo';
@@ -20,6 +20,7 @@ export const ticketRouter = Router();
 
 ticketRouter.use(authMiddleware);
 ticketRouter.use(tenantResolver);
+ticketRouter.use(branchResolver);
 ticketRouter.use(statusRouter);
 ticketRouter.use(notesRouter);
 ticketRouter.use(photosRouter);
@@ -29,7 +30,7 @@ ticketRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const tenant_id = req.user?.tenant_id;
     const tickets = await reqDb(req)('service_tickets as t')
-      .where('t.tenant_id', tenant_id)
+      .where({ 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id })
       .leftJoin('customers as c', 'c.id', 't.customer_id')
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .leftJoin('users as u', 'u.id', 't.technician_id')
@@ -70,7 +71,7 @@ ticketRouter.get('/technician/dashboard', requireRole('teknisi'), async (req: Au
     const search = String(req.query.search || '').trim();
     const query = reqDb(req);
     const assigned = query('service_tickets as t')
-      .where({ 't.tenant_id': tenant_id, 't.technician_id': technician_id })
+      .where({ 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id, 't.technician_id': technician_id })
       .leftJoin('customers as c', 'c.id', 't.customer_id')
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .modify((builder) => {
@@ -106,7 +107,7 @@ ticketRouter.get('/technician/dashboard', requireRole('teknisi'), async (req: Au
       .orderBy('t.created_at', 'desc');
 
     const [stats] = await query('service_tickets as t')
-      .where({ 't.tenant_id': tenant_id, 't.technician_id': technician_id })
+      .where({ 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id, 't.technician_id': technician_id })
       .select(query.raw(`
         COUNT(*) FILTER (WHERE t.current_status = 'antrian') AS antrean,
         COUNT(*) FILTER (
@@ -144,7 +145,7 @@ ticketRouter.get('/technicians/workload', async (req: AuthRequest, res: Response
       return;
     }
 
-    const workload = await getTechnicianWorkload(reqDb(req), tenant_id);
+    const workload = await getTechnicianWorkload(reqDb(req), tenant_id, req.user!.branch_id!);
     const totalActive = workload.reduce((sum, technician) => sum + technician.active_count, 0);
     const topTechnician = [...workload].sort(
       (a, b) => b.total_count - a.total_count || a.name.localeCompare(b.name)
@@ -170,7 +171,7 @@ ticketRouter.get('/:id', async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     const query = reqDb(req);
-    const ticket = await query('service_tickets').where({ id, tenant_id }).first();
+    const ticket = await query('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
     if (!ticket) {
       res.status(404).json({ error: 'Tiket tidak ditemukan' });
       return;
@@ -199,7 +200,6 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const {
-      branch_id,
       booking_id,
       customer_id,
       device_id,
@@ -240,22 +240,16 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
     const result = await withTenantContext(tenant_id, async (trx) => {
       let booking: any = null;
       if (booking_id) {
-        booking = await trx('bookings').where({ id: booking_id, tenant_id }).first();
+        booking = await trx('bookings').where({ id: booking_id, tenant_id, branch_id: req.user?.branch_id }).first();
         if (!booking) throw Object.assign(new Error('Booking tidak ditemukan'), { status: 404 });
 
-        const existing = await trx('service_tickets').where({ booking_id: booking.id, tenant_id }).first();
+        const existing = await trx('service_tickets').where({ booking_id: booking.id, tenant_id, branch_id: req.user?.branch_id }).first();
         if (existing) {
           throw Object.assign(new Error(`Booking ini sudah dibuatkan tiket ${existing.ticket_code}`), { status: 409 });
         }
       }
 
-      let resolvedBranchId = branch_id || booking?.branch_id;
-      if (!resolvedBranchId) {
-        const branch =
-          (await trx('branches').where({ tenant_id, is_main: true }).first()) ??
-          (await trx('branches').where({ tenant_id }).orderBy('created_at', 'asc').first());
-        resolvedBranchId = branch?.id;
-      }
+      const resolvedBranchId = req.user?.branch_id;
       if (!resolvedBranchId) {
         throw Object.assign(new Error('Cabang tidak ditemukan untuk tenant ini'), { status: 400 });
       }
@@ -301,13 +295,13 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
       }
 
       const requestedTechnician = requestedTechnicianId
-        ? await findActiveTechnician(trx, tenant_id, requestedTechnicianId)
+      ? await findActiveTechnician(trx, tenant_id, requestedTechnicianId, resolvedBranchId)
         : null;
       if (requestedTechnicianId && !requestedTechnician) {
         throw Object.assign(new Error('Teknisi tidak ditemukan atau tidak aktif'), { status: 400 });
       }
 
-      const autoTechnician = requestedTechnician ? null : await pickAutoTechnician(trx, tenant_id);
+      const autoTechnician = requestedTechnician ? null : await pickAutoTechnician(trx, tenant_id, resolvedBranchId);
       const assignedTechnician = requestedTechnician ?? autoTechnician;
       const assignedAt = assignedTechnician ? new Date() : null;
 
@@ -434,7 +428,7 @@ ticketRouter.put('/:id/status', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const ticket = await reqDb(req)('service_tickets').where({ id, tenant_id }).first();
+    const ticket = await reqDb(req)('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
     if (!ticket) {
       res.status(404).json({ error: 'Tiket tidak ditemukan' });
       return;
@@ -448,7 +442,7 @@ ticketRouter.put('/:id/status', async (req: AuthRequest, res: Response) => {
 
     const customer = await reqDb(req)('customers').where({ id: ticket.customer_id, tenant_id }).select('phone_wa').first();
     await withTenantContext(tenant_id!, async (trx) => {
-      await trx('service_tickets').where({ id }).update({ current_status: to_status });
+      await trx('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).update({ current_status: to_status });
       await trx('ticket_status_logs').insert({
         tenant_id: tenant_id!,
         ticket_id: id,
@@ -489,7 +483,7 @@ ticketRouter.post('/:id/close', async (req: AuthRequest, res: Response) => {
     const finalStatus = to_status === 'selesai' || to_status === 'siap_diambil' ? to_status : 'selesai';
 
     const notification = await withTenantContext(tenant_id, async (trx) => {
-      const ticket = await trx('service_tickets').where({ id, tenant_id }).first();
+      const ticket = await trx('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!ticket) throw new Error('Tiket tidak ditemukan');
 
       const invoice = await trx('invoices').where({ ticket_id: id, tenant_id }).first();
@@ -499,7 +493,7 @@ ticketRouter.post('/:id/close', async (req: AuthRequest, res: Response) => {
       const pendingQuotation = await trx('quotations').where({ ticket_id: id, tenant_id }).whereNot({ status: 'approved' }).first();
       if (pendingQuotation) throw new Error('Masih ada quotation pending');
 
-      await trx('service_tickets').where({ id }).update({ current_status: finalStatus, completed_at: new Date(), closed_by: req.user?.user_id });
+      await trx('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).update({ current_status: finalStatus, completed_at: new Date(), closed_by: req.user?.user_id });
 
       await trx('ticket_status_logs').insert({
         tenant_id,
@@ -542,7 +536,7 @@ ticketRouter.post('/:id/notes', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const ticket = await reqDb(req)('service_tickets').where({ id, tenant_id }).first();
+    const ticket = await reqDb(req)('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
     if (!ticket) {
       res.status(404).json({ error: 'Tiket tidak ditemukan' });
       return;

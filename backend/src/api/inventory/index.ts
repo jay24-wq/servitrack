@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import db from '@models/index';
-import { authMiddleware, AuthRequest } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver } from '@middleware/AuthMiddleware';
 import { reqDb, tenantResolver } from '@middleware/TenantResolver';
 import { CreatePartDto, StockInDto } from './dto';
 
@@ -8,13 +8,14 @@ export const inventoryRouter = Router();
 
 inventoryRouter.use(authMiddleware);
 inventoryRouter.use(tenantResolver);
+inventoryRouter.use(branchResolver);
 
 // GET /api/inventory/parts
 inventoryRouter.get('/parts', async (req: AuthRequest, res: Response) => {
   try {
     const tenant_id = req.user?.tenant_id;
     const status = String(req.query.status || 'active');
-    let q = reqDb(req)('parts').where({ tenant_id });
+    let q = reqDb(req)('parts').where({ tenant_id, branch_id: req.user?.branch_id });
     if (status === 'active') q = q.where({ is_active: true });
     if (status === 'inactive') q = q.where({ is_active: false });
     const parts = await q;
@@ -32,12 +33,12 @@ inventoryRouter.delete('/parts/:id', async (req: AuthRequest, res: Response) => 
     }
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
-    const part = await reqDb(req)('parts').where({ id, tenant_id }).first();
+    const part = await reqDb(req)('parts').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
     if (!part) {
       res.status(404).json({ error: 'Part tidak ditemukan' });
       return;
     }
-    const [updated] = await reqDb(req)('parts').where({ id, tenant_id }).update({ is_active: false }).returning('*');
+    const [updated] = await reqDb(req)('parts').where({ id, tenant_id, branch_id: req.user?.branch_id }).update({ is_active: false }).returning('*');
     res.json({ data: updated, softDeleted: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Gagal menghapus part' });
@@ -57,8 +58,8 @@ inventoryRouter.post('/parts', async (req: AuthRequest, res: Response) => {
       res.status(403).json({ error: 'Hanya admin yang dapat menambah part' });
       return;
     }
-    const { branch_id: requestedBranch, sku, name, category, spec, unit = 'pcs', stock_qty = 0, min_stock = 0, cost_price = 0, sell_price = 0, bin_location } = req.body as CreatePartDto;
-    const branch_id = requestedBranch || req.user.branch_id;
+    const { sku, name, category, spec, unit = 'pcs', stock_qty = 0, min_stock = 0, cost_price = 0, sell_price = 0, bin_location } = req.body as CreatePartDto;
+    const branch_id = req.user.branch_id;
     if (!branch_id || !sku?.trim() || !name?.trim() || Number(stock_qty) < 0 || Number(min_stock) < 0 || Number(cost_price) < 0 || Number(sell_price) < 0) {
       res.status(400).json({ error: 'Data parts tidak valid' });
       return;
@@ -98,7 +99,7 @@ inventoryRouter.get('/movements', async (req: AuthRequest, res: Response) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 10));
     let q = reqDb(req)('part_stock_movements as m')
-      .where('m.tenant_id', tenant_id)
+      .where({ 'm.tenant_id': tenant_id, 'p.branch_id': req.user?.branch_id })
       .leftJoin('parts as p', 'p.id', 'm.part_id')
       .leftJoin('service_tickets as t', 't.id', 'm.ticket_id')
       .leftJoin('users as u', 'u.id', 'm.created_by')
@@ -147,9 +148,9 @@ inventoryRouter.post('/stock-in', async (req: AuthRequest, res: Response) => {
     }
     const result = await db.transaction(async (trx) => {
       await trx.raw('SELECT set_config(?, ?, true)', ['app.tenant_id', tenant_id]);
-      const part = await trx('parts').where({ id: part_id, tenant_id }).first();
+       const part = await trx('parts').where({ id: part_id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!part) throw new Error('Part tidak ditemukan');
-      await trx('parts').where({ id: part_id }).update({ stock_qty: Number(part.stock_qty) + Number(qty), ...(cost_price !== undefined && { cost_price: Number(cost_price) }) });
+       await trx('parts').where({ id: part_id, tenant_id, branch_id: req.user?.branch_id }).update({ stock_qty: Number(part.stock_qty) + Number(qty), ...(cost_price !== undefined && { cost_price: Number(cost_price) }) });
       const [movement] = await trx('part_stock_movements').insert({
         tenant_id,
         part_id,
@@ -188,7 +189,7 @@ inventoryRouter.put('/parts/:id', async (req: AuthRequest, res: Response) => {
     }
 
     const [updated] = await reqDb(req)('parts')
-      .where({ id, tenant_id })
+      .where({ id, tenant_id, branch_id: req.user?.branch_id })
       .update({
         name: name.trim(),
         ...(category !== undefined && { category: String(category).trim() || 'Umum' }),

@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authMiddleware, AuthRequest, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 import { notifyPaymentReceived } from '@services/notifications/events';
 
@@ -8,6 +8,7 @@ export const paymentRouter = Router();
 paymentRouter.use(authMiddleware);
 paymentRouter.use(requireRole('admin', 'frontdesk'));
 paymentRouter.use(tenantResolver);
+paymentRouter.use(branchResolver);
 
 // GET /api/payments - list payments with invoice/ticket/customer
 paymentRouter.get('/', async (req: AuthRequest, res: Response) => {
@@ -25,6 +26,7 @@ paymentRouter.get('/', async (req: AuthRequest, res: Response) => {
       .leftJoin('service_tickets as t', 't.id', 'i.ticket_id')
       .leftJoin('customers as c', 'c.id', 't.customer_id')
       .where('p.tenant_id', tenant_id)
+      .where('t.branch_id', req.user?.branch_id)
       .select(
         'p.id',
         'p.method',
@@ -82,7 +84,8 @@ paymentRouter.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const invoice = await trx('invoices').where({ id: invoice_id, tenant_id }).first();
+      const invoice = await trx('invoices as i').join('service_tickets as t', 't.id', 'i.ticket_id')
+        .where({ 'i.id': invoice_id, 'i.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id }).select('i.*').first();
       if (!invoice) throw new Error('Invoice tidak ditemukan');
 
       const [payment] = await trx('payments')
@@ -112,10 +115,10 @@ paymentRouter.post('/', async (req: AuthRequest, res: Response) => {
       }
 
       await trx('invoices')
-        .where({ id: invoice_id })
+        .where({ id: invoice_id, tenant_id })
         .update({ status: newStatus });
 
-       const ticket = await trx('service_tickets').where({ id: invoice.ticket_id, tenant_id }).first();
+        const ticket = await trx('service_tickets').where({ id: invoice.ticket_id, tenant_id, branch_id: req.user?.branch_id }).first();
        const customer = await trx('customers').where({ id: ticket.customer_id, tenant_id }).select('phone_wa').first();
        return { payment, invoice_status: newStatus, invoice, ticket, customerPhone: customer?.phone_wa ?? '' };
      });

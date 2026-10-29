@@ -1,12 +1,13 @@
 import { Router, Response } from 'express';
-import { authMiddleware, AuthRequest, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, branchResolver, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
+import { tenantResolver } from '@middleware/TenantResolver';
 import { syncBookingCalendarException } from '@services/bookingSlotService';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const router = Router();
 
-router.use(authMiddleware, requireRole('ADMIN'));
+router.use(authMiddleware, requireRole('ADMIN'), tenantResolver, branchResolver);
 
 async function branchFor(trx: any, tenantId: string, requested?: string) {
   const branch = requested
@@ -43,7 +44,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     if (!MONTH_RE.test(month)) return res.status(400).json({ error: 'Parameter month harus berformat YYYY-MM' });
     const lastDate = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).toISOString().slice(0, 10);
     const data = await withTenantContext(tenantId, async (trx) => {
-      const branch = await branchFor(trx, tenantId, req.query.branch_id ? String(req.query.branch_id) : req.user?.branch_id);
+       const branch = await branchFor(trx, tenantId, req.user?.branch_id);
       return trx('booking_calendar_exceptions')
         .where({ tenant_id: tenantId, branch_id: branch.id })
         .whereBetween('slot_date', [`${month}-01`, lastDate])
@@ -61,7 +62,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     if (!tenantId) return res.status(401).json({ error: 'Tenant tidak teridentifikasi' });
     const input = validateInput(req.body);
     const data = await withTenantContext(tenantId, async (trx) => {
-      const branch = await branchFor(trx, tenantId, req.body.branch_id || req.user?.branch_id);
+       const branch = await branchFor(trx, tenantId, req.user?.branch_id);
       const [created] = await trx('booking_calendar_exceptions').insert({
         tenant_id: tenantId,
         branch_id: branch.id,
@@ -90,11 +91,11 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     if (!tenantId) return res.status(401).json({ error: 'Tenant tidak teridentifikasi' });
     const input = validateInput(req.body);
     const data = await withTenantContext(tenantId, async (trx) => {
-      const existing = await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId }).first();
+       const existing = await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId, branch_id: req.user?.branch_id }).first();
       if (!existing) throw Object.assign(new Error('Exception tidak ditemukan'), { status: 404 });
       const slot = await trx('booking_slots').where({ tenant_id: tenantId, branch_id: existing.branch_id, slot_date: input.slotDate }).first();
       if (slot && input.capacity !== null && input.capacity < Number(slot.booked_count)) throw Object.assign(new Error('Override kapasitas tidak boleh di bawah jumlah booking yang sudah ada'), { status: 409 });
-      const [updated] = await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId }).update({
+       const [updated] = await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId, branch_id: req.user?.branch_id }).update({
         slot_date: input.slotDate, status: input.status, capacity_override: input.capacity, title: input.title, notes: input.notes, updated_at: trx.fn.now(),
       }).returning('*');
       await syncBookingCalendarException(trx, tenantId, existing.branch_id, existing.slot_date);
@@ -112,9 +113,9 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
     const tenantId = req.user?.tenant_id;
     if (!tenantId) return res.status(401).json({ error: 'Tenant tidak teridentifikasi' });
     await withTenantContext(tenantId, async (trx) => {
-      const existing = await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId }).first();
+       const existing = await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId, branch_id: req.user?.branch_id }).first();
       if (!existing) throw Object.assign(new Error('Exception tidak ditemukan'), { status: 404 });
-      await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId }).delete();
+       await trx('booking_calendar_exceptions').where({ id: req.params.id, tenant_id: tenantId, branch_id: req.user?.branch_id }).delete();
       await syncBookingCalendarException(trx, tenantId, existing.branch_id, existing.slot_date);
     });
     return res.status(204).send();
