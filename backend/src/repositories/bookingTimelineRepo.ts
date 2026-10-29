@@ -1,5 +1,3 @@
-import db from '@models/index';
-
 export type BookingEventInput = {
   tenant_id: string;
   booking_id: string;
@@ -13,9 +11,8 @@ export type BookingEventInput = {
   created_at?: Date | string;
 };
 
-export async function logBookingEvent(input: BookingEventInput, trx?: any) {
-  const executor = trx ?? db;
-  const [row] = await executor('booking_status_logs')
+export async function logBookingEvent(input: BookingEventInput, trx: any) {
+  const [row] = await trx('booking_status_logs')
     .insert({
       tenant_id: input.tenant_id,
       booking_id: input.booking_id,

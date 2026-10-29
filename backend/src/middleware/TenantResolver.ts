@@ -29,12 +29,16 @@ export async function tenantResolver(req: AuthRequest, _res: Response, next: Nex
     _res.on('finish', () => { void finish(true); });
     _res.on('close',  () => { void finish(false); });
   } catch {
-    /* tanpa konteks tenant — query akan mengembalikan 0 baris RLS */
+    // Jangan lanjutkan request tenant tanpa transaksi yang memuat app.tenant_id.
+    return next(new Error('Gagal menyiapkan konteks tenant'));
   }
   next();
 }
 
 /** Helper safe untuk router: pakai transaksi request bila ada. */
 export function reqDb(req: AuthRequest) {
+  if (req.user?.tenant_id && !req.db) {
+    throw new Error('Konteks database tenant tidak tersedia');
+  }
   return req.db ?? db;
 }

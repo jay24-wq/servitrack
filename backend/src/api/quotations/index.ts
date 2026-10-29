@@ -1,8 +1,7 @@
 import { Router, Response } from 'express';
-import db from '@models/index';
 import crypto from 'crypto';
 import { authMiddleware, AuthRequest, branchResolver, withTenantContext } from '@middleware/AuthMiddleware';
-import { tenantResolver } from '@middleware/TenantResolver';
+import { reqDb, tenantResolver } from '@middleware/TenantResolver';
 import { notifyQuotationCreated } from '@services/notifications/events';
 
 export const quotationRouter = Router();
@@ -102,7 +101,7 @@ quotationRouter.post('/:id/approve', async (req: AuthRequest, res: Response) => 
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
 
-    const [updated] = await db('quotations')
+    const [updated] = await reqDb(req)('quotations')
        .where({ id, tenant_id })
       .whereExists(function () { this.select('*').from('service_tickets').whereRaw('service_tickets.id = quotations.ticket_id').where({ branch_id: req.user?.branch_id }); })
       .update({ status: 'approved', decided_at: new Date() })

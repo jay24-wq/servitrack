@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import db from '@models/index';
 import { authMiddleware, AuthRequest, branchResolver } from '@middleware/AuthMiddleware';
 import { reqDb, tenantResolver } from '@middleware/TenantResolver';
 import { CreatePartDto, StockInDto } from './dto';
@@ -65,7 +64,7 @@ inventoryRouter.post('/parts', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const result = await db.transaction(async (trx) => {
+    const result = await reqDb(req).transaction(async (trx) => {
       await trx.raw('SELECT set_config(?, ?, true)', ['app.tenant_id', tenant_id]);
       const [part] = await trx('parts').insert({
         tenant_id, branch_id, sku: sku.trim(), name: name.trim(), category: category || 'Umum', spec: spec || null,
@@ -146,7 +145,7 @@ inventoryRouter.post('/stock-in', async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: 'Data tidak valid' });
       return;
     }
-    const result = await db.transaction(async (trx) => {
+    const result = await reqDb(req).transaction(async (trx) => {
       await trx.raw('SELECT set_config(?, ?, true)', ['app.tenant_id', tenant_id]);
        const part = await trx('parts').where({ id: part_id, tenant_id, branch_id: req.user?.branch_id }).first();
       if (!part) throw new Error('Part tidak ditemukan');

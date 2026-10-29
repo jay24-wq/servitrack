@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@models/index';
-import { authMiddleware, AuthRequest } from '@middleware/AuthMiddleware';
+import { authMiddleware, AuthRequest, withTenantContext } from '@middleware/AuthMiddleware';
 import { ensureBookingSlots } from '@services/bookingSlotService';
 import { appConfig } from '@config/app';
 
@@ -198,7 +198,9 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       return;
     }
 
-    await db('users').where({ id: user.user_id }).update({ last_login_at: new Date() });
+    await withTenantContext(user.tenant_id, async (trx) => {
+      await trx('users').where({ id: user.user_id }).update({ last_login_at: new Date() });
+    });
 
     // JWT Payload dengan tenant_id secara eksplisit
     const payload = {

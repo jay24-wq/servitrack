@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import db from '@models/index';
 import { authMiddleware, AuthRequest, branchResolver, requireRole, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 import { generateTicketCode, generateTrackingCode, generateTrackingToken } from '@utils/code';
@@ -29,7 +28,8 @@ ticketRouter.use(photosRouter);
 ticketRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const tenant_id = req.user?.tenant_id;
-    const tickets = await reqDb(req)('service_tickets as t')
+    const query = reqDb(req);
+    const tickets = await query('service_tickets as t')
       .where({ 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id })
       .leftJoin('customers as c', 'c.id', 't.customer_id')
       .leftJoin('devices as d', 'd.id', 't.device_id')
@@ -40,9 +40,9 @@ ticketRouter.get('/', async (req: AuthRequest, res: Response) => {
         'b.booking_code',
         'c.name as customer_name',
         'c.phone_wa as customer_phone',
-        db.raw("concat_ws(' ', d.brand, d.model) as device_label"),
+        query.raw("concat_ws(' ', d.brand, d.model) as device_label"),
         'u.name as technician_name',
-        db.raw(`
+        query.raw(`
           upper(
             concat(
               left(split_part(u.name, ' ', 1), 1),

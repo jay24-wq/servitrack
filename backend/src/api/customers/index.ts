@@ -1,7 +1,6 @@
 import { Router, Response } from 'express';
-import db from '@models/index';
 import { authMiddleware, AuthRequest } from '@middleware/AuthMiddleware';
-import { tenantResolver } from '@middleware/TenantResolver';
+import { reqDb, tenantResolver } from '@middleware/TenantResolver';
 
 export const customerRouter = Router();
 
@@ -12,7 +11,7 @@ customerRouter.use(tenantResolver);
 customerRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const tenant_id = req.user?.tenant_id;
-    const customers = await db('customers')
+    const customers = await reqDb(req)('customers')
       .where({ tenant_id })
       .select('*')
       .orderBy('name', 'asc');
@@ -29,7 +28,7 @@ customerRouter.get('/:id', async (req: AuthRequest, res: Response) => {
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
 
-    const customer = await db('customers')
+    const customer = await reqDb(req)('customers')
       .where({ id, tenant_id })
       .first();
 
@@ -38,7 +37,7 @@ customerRouter.get('/:id', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const devices = await db('devices')
+    const devices = await reqDb(req)('devices')
       .where({ customer_id: id, tenant_id })
       .select('*');
 
@@ -59,7 +58,7 @@ customerRouter.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const [newCustomer] = await db('customers')
+    const [newCustomer] = await reqDb(req)('customers')
       .insert({
         tenant_id,
         name,
@@ -82,7 +81,7 @@ customerRouter.put('/:id', async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { name, phone, email, address } = req.body;
 
-    const [updated] = await db('customers')
+    const [updated] = await reqDb(req)('customers')
       .where({ id, tenant_id })
       .update({
         ...(name && { name }),
@@ -109,7 +108,7 @@ customerRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
 
-    const deleted = await db('customers')
+    const deleted = await reqDb(req)('customers')
       .where({ id, tenant_id })
       .delete();
 
@@ -132,7 +131,7 @@ customerRouter.get('/:customerId/devices', async (req: AuthRequest, res: Respons
     const tenant_id = req.user?.tenant_id;
     const { customerId } = req.params;
 
-    const devices = await db('devices')
+    const devices = await reqDb(req)('devices')
       .where({ customer_id: customerId, tenant_id })
       .select('*');
 
@@ -154,13 +153,13 @@ customerRouter.post('/:customerId/devices', async (req: AuthRequest, res: Respon
       return;
     }
 
-    const customer = await db('customers').where({ id: customerId, tenant_id }).first();
+    const customer = await reqDb(req)('customers').where({ id: customerId, tenant_id }).first();
     if (!customer) {
       res.status(404).json({ error: 'Pelanggan tidak ditemukan' });
       return;
     }
 
-    const [newDevice] = await db('devices')
+    const [newDevice] = await reqDb(req)('devices')
       .insert({
         tenant_id,
         customer_id: customerId,
@@ -185,7 +184,7 @@ customerRouter.put('/:customerId/devices/:deviceId', async (req: AuthRequest, re
     const { customerId, deviceId } = req.params;
     const { type, brand, model, serial_number, notes } = req.body;
 
-    const [updated] = await db('devices')
+    const [updated] = await reqDb(req)('devices')
       .where({ id: deviceId, customer_id: customerId, tenant_id })
       .update({
         ...(type && { type }),
@@ -213,7 +212,7 @@ customerRouter.delete('/:customerId/devices/:deviceId', async (req: AuthRequest,
     const tenant_id = req.user?.tenant_id;
     const { customerId, deviceId } = req.params;
 
-    const deleted = await db('devices')
+    const deleted = await reqDb(req)('devices')
       .where({ id: deviceId, customer_id: customerId, tenant_id })
       .delete();
 
