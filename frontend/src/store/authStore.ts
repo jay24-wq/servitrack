@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { jwtDecode } from 'jwt-decode';
 import { logoutRequest } from '../lib/api';
+import { apiClient } from '../services/api-client';
 
 export type UserRole = 'ADMIN' | 'FRONTDESK' | 'TEKNISI' | 'KURIR';
 export type DemoRole = 'ADMIN' | 'TEKNISI' | 'FRONTDESK' | 'KURIR';
@@ -58,7 +59,7 @@ interface AuthState {
   isLoading: boolean;
   login: (token: string) => void;
   loginAs: (role: DemoRole) => AuthUser;
-  logout: () => void;
+  logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
 }
 
@@ -114,8 +115,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     return user;
   },
 
-  logout: () => {
-    void logoutRequest().catch(() => undefined);
+  logout: async () => {
+    try {
+      await logoutRequest();
+    } catch (error) {
+      console.warn('[Auth] logout request gagal; session lokal tetap dihapus', error);
+    }
+    apiClient.clearToken();
     persist(null, null);
     set({ user: null, token: null, isAuthenticated: false, isLoading: false });
   },

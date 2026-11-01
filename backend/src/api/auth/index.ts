@@ -125,10 +125,15 @@ authRouter.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
 authRouter.post('/logout', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user?.user_id || !req.user.tenant_id) return res.status(401).json({ error: 'Identitas pengguna tidak ditemukan' });
-    await withTenantContext(req.user.tenant_id, async (trx) => {
-      await trx('users').where({ id: req.user!.user_id, tenant_id: req.user!.tenant_id }).update({ courier_status: 'OFFLINE', updated_at: trx.fn.now() });
+    const result = await withTenantContext(req.user.tenant_id, async (trx) => {
+      const before = await trx('users').where({ id: req.user!.user_id, tenant_id: req.user!.tenant_id }).select('id', 'courier_status').first();
+      const affectedRows = await trx('users').where({ id: req.user!.user_id, tenant_id: req.user!.tenant_id }).update({ courier_status: 'OFFLINE', updated_at: trx.fn.now() });
+      const after = await trx('users').where({ id: req.user!.user_id, tenant_id: req.user!.tenant_id }).select('id', 'courier_status').first();
+      return { before, after, affectedRows };
     });
-    return res.json({ message: 'Logout berhasil' });
+    console.info('[Auth] logout availability', { userId: req.user.user_id, before: result.before?.courier_status ?? null, after: result.after?.courier_status ?? null, affectedRows: result.affectedRows });
+    if (result.affectedRows !== 1 || result.after?.courier_status !== 'OFFLINE') return res.status(409).json({ error: 'Status availability gagal diubah menjadi OFFLINE' });
+    return res.json({ message: 'Logout berhasil', data: { status: result.after.courier_status, affectedRows: result.affectedRows } });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Gagal logout' });
   }
