@@ -127,6 +127,10 @@ export async function loginRequest(email: string, password: string, slug: string
   return data;
 }
 
+export async function logoutRequest() {
+  await apiClient.post('/auth/logout');
+}
+
 export async function createPublicBooking(input: PublicBookingInput) {
   const { data } = await apiClient.post<{ message: string; data: PublicBookingResult }>('/public/bookings', input);
   return data.data;
@@ -355,7 +359,7 @@ export async function getStaff(params: Record<string, string | number> = {}) {
   return data;
 }
 
-export async function updateStaff(id: string, payload: { name?: string; email?: string; phone?: string | null; role?: string; branch_id?: string | null; is_active?: boolean }) {
+export async function updateStaff(id: string, payload: { name?: string; email?: string; phone?: string | null; role?: string; branch_id?: string | null; is_active?: boolean; courier_status?: 'ONLINE' | 'OFFLINE' }) {
   const { data } = await apiClient.put<{ data: any }>(`/staff/${encodeURIComponent(id)}`, payload);
   return data.data;
 }
@@ -413,5 +417,78 @@ export async function updateTicketStatus(id: string, status: string, note?: stri
 
 export async function updateBooking(id: string, patch: { status: string }) {
   const { data } = await apiClient.put<{ data: any }>(`/bookings/${encodeURIComponent(id)}`, patch);
+  return data.data;
+}
+
+export interface CourierAssignment {
+  id: string;
+  assignment_type: 'pickup' | 'delivery';
+  status: string;
+  customer_name?: string;
+  customer_phone?: string;
+  booking_customer_phone_snapshot?: string | null;
+  tracking_code?: string;
+  pickup_address?: string;
+  pickup_latitude?: number | string | null;
+  pickup_longitude?: number | string | null;
+  pickup_time?: string | null;
+  service_status?: string | null;
+  invoice_status?: string | null;
+  device_model?: string | null;
+  device_serial?: string | null;
+  schedule_date?: string | null;
+  schedule_time?: string | null;
+  [key: string]: unknown;
+}
+
+export async function getCourierDashboard() {
+  const { data } = await apiClient.get<{ data: { stats: Record<string, number>; active: CourierAssignment[]; schedule: CourierAssignment[] } }>('/courier/dashboard');
+  return data.data;
+}
+
+export async function getCourierAssignments(type?: 'pickup' | 'delivery') {
+  const { data } = await apiClient.get<{ data: CourierAssignment[] }>('/courier/assignments', { params: type ? { type } : undefined });
+  return data.data;
+}
+
+export async function updateCourierStatus(id: string, payload: { status: string; latitude?: number; longitude?: number; failure_reason?: string; failure_notes?: string }) {
+  const { data } = await apiClient.patch<{ data: CourierAssignment }>(`/courier/assignments/${encodeURIComponent(id)}/status`, payload);
+  return data.data;
+}
+
+export async function uploadCourierProof(id: string, input: { type: 'pickup' | 'delivery'; photo?: File; notes: string; latitude?: number; longitude?: number }) {
+  const body = new FormData();
+  body.append('type', input.type); body.append('notes', input.notes);
+  if (input.photo) body.append('photo', input.photo);
+  if (input.latitude !== undefined) body.append('latitude', String(input.latitude));
+  if (input.longitude !== undefined) body.append('longitude', String(input.longitude));
+  const { data } = await apiClient.post<{ data: unknown }>(`/courier/assignments/${encodeURIComponent(id)}/proofs`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
+  return data.data;
+}
+
+export interface CourierQueueItem {
+  id: string;
+  reference: string;
+  assignment_type: 'pickup' | 'delivery';
+  customer_name: string;
+  customer_phone?: string | null;
+  address?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  created_at: string;
+}
+
+export async function getCourierAssignmentQueue() {
+  const { data } = await apiClient.get<{ data: CourierQueueItem[] }>('/courier/queue');
+  return data.data;
+}
+
+export async function getCourierRecommendations(type: 'pickup' | 'delivery', id: string) {
+  const { data } = await apiClient.get<{ data: Array<{ id: string; name: string; active_tasks: number; recommended: boolean; reason: string }> }>(`/courier/queue/${type}/${encodeURIComponent(id)}/recommendations`);
+  return data.data;
+}
+
+export async function assignCourier(input: { courier_id: string; assignment_type: 'pickup' | 'delivery'; booking_id?: string; ticket_id?: string; assignment_reason?: string }) {
+  const { data } = await apiClient.post<{ data: CourierAssignment }>('/courier/assignments', input);
   return data.data;
 }

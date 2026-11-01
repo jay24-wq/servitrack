@@ -64,6 +64,10 @@ export async function getTrackingByCode(trackingCode: string): Promise<TrackingR
   const data = result.rows?.[0]?.data;
   if (!data) return null;
 
+  const courierResult = await db.raw('SELECT public.courier_tracking_events(?) AS data', [trackingCode]);
+  const courierEvents = courierResult.rows?.[0]?.data;
+  if (Array.isArray(courierEvents)) data.timeline = [...(Array.isArray(data.timeline) ? data.timeline : []), ...courierEvents];
+
   const timeline: TrackingTimelineEvent[] = Array.isArray(data.timeline)
     ? data.timeline.map((event: any) => ({
         status: event.status,
@@ -73,6 +77,7 @@ export async function getTrackingByCode(trackingCode: string): Promise<TrackingR
         createdAt: event.createdAt,
       }))
     : [];
+  timeline.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   return {
     trackingCode: data.trackingCode,

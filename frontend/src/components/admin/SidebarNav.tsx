@@ -63,6 +63,12 @@ const FRONTDESK_NAV_ITEMS: NavItem[] = [
   { label: 'Pembayaran', icon: Money, href: '/payments' },
 ];
 
+const COURIER_NAV_ITEMS: NavItem[] = [
+  { label: 'Dashboard Kurir', icon: SquaresFour, href: '/courier' },
+  { label: 'Tugas Kurir', icon: Package, href: '/courier/tasks' },
+  { label: 'Riwayat Tugas', icon: ClipboardText, href: '/courier/history' },
+];
+
 const MOCK_TENANTS = [
   { id: 't1', name: 'Workshop Radio Dalam', slug: 'radio-dalam', plan: 'Starter Plan', active: true },
   { id: 't2', name: 'Workshop BSD Serpong', slug: 'bsd-serpong', plan: 'Pro Plan', active: true },
@@ -71,19 +77,21 @@ const MOCK_TENANTS = [
 
 interface SidebarNavProps {
   onNavigate?: () => void;
-  mode?: 'admin' | 'technician' | 'frontdesk';
+  mode?: 'admin' | 'technician' | 'frontdesk' | 'courier';
 }
 
 const NAV_BY_MODE: Record<NonNullable<SidebarNavProps['mode']>, NavItem[]> = {
   admin: ADMIN_NAV_ITEMS,
   technician: TECHNICIAN_NAV_ITEMS,
   frontdesk: FRONTDESK_NAV_ITEMS,
+  courier: COURIER_NAV_ITEMS,
 };
 
 const SECTION_LABEL: Record<NonNullable<SidebarNavProps['mode']>, string> = {
   admin: 'Workspace',
   technician: 'Menu Teknisi',
   frontdesk: 'Menu Frontdesk',
+  courier: 'Menu Kurir',
 };
 
 export default function SidebarNav({ onNavigate, mode = 'admin' }: SidebarNavProps) {

@@ -42,7 +42,7 @@ staffRouter.get('/', async (req: AuthRequest, res: Response) => {
         if (search) query.where((builder) => builder.whereILike('users.name', `%${search}%`).orWhereILike('users.email', `%${search}%`).orWhereILike('users.phone', `%${search}%`));
       });
     const countRow = await base.clone().clearSelect().clearOrder().count<{ count: string }>('users.id as count').first();
-    const staff = await base.clone().select('users.id', 'users.name', 'users.email', 'users.phone', 'users.is_active', 'roles.code as role', 'branches.name as branch_name', 'users.created_at').orderBy(selectedSort.column, selectedSort.order).limit(limit).offset((page - 1) * limit);
+    const staff = await base.clone().select('users.id', 'users.name', 'users.email', 'users.phone', 'users.is_active', 'users.courier_status', 'roles.code as role', 'branches.name as branch_name', 'users.created_at').orderBy(selectedSort.column, selectedSort.order).limit(limit).offset((page - 1) * limit);
     const statsRows = await reqDb(req)('users').join('roles', 'users.role_id', 'roles.id').where({ 'users.tenant_id': tenant_id, 'users.is_active': true }).whereNull('users.deleted_at').select('roles.code as role').count('users.id as count').groupBy('roles.code') as Array<{ role: string; count: string }>;
     const [{ count: activeCount }] = await reqDb(req)('users').where({ tenant_id, is_active: true }).whereNull('deleted_at').count('id as count') as Array<{ count: string }>;
     const [{ count: totalCount }] = await reqDb(req)('users').where({ tenant_id }).whereNull('deleted_at').count('id as count') as Array<{ count: string }>;
@@ -135,7 +135,7 @@ staffRouter.put('/:id', async (req: AuthRequest, res: Response) => {
 
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
-    const { name, email, role, branch_id, is_active } = req.body;
+    const { name, email, role, branch_id, is_active, courier_status } = req.body;
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = String(name).trim();
@@ -143,6 +143,14 @@ staffRouter.put('/:id', async (req: AuthRequest, res: Response) => {
     if (req.body.phone !== undefined) updateData.phone = req.body.phone || null;
     if (branch_id !== undefined) updateData.branch_id = branch_id;
     if (is_active !== undefined) updateData.is_active = is_active;
+    if (courier_status !== undefined) {
+      const normalizedStatus = String(courier_status).toUpperCase();
+      if (!['ONLINE', 'OFFLINE'].includes(normalizedStatus)) {
+        res.status(400).json({ error: 'Status availability tidak valid' });
+        return;
+      }
+      updateData.courier_status = normalizedStatus;
+    }
 
     if (id === req.user?.user_id && is_active === false) {
       res.status(400).json({ error: 'Tidak dapat menonaktifkan akun sendiri' });

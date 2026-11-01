@@ -52,3 +52,13 @@ export function notifyPaymentReceived(input: {
     templateName: 'payment_received', variables: { invoiceNumber: input.invoiceNumber, amount: input.amount, paymentStatus: input.paymentStatus },
   });
 }
+
+export function notifyCourierEvent(input: {
+  tenantId: string; customerId: string; phone: string; trackingCode: string; status: string;
+}) {
+  return sendWhatsAppNotification({
+    tenantId: input.tenantId, customerId: input.customerId, toPhone: input.phone,
+    templateName: `courier_${input.status.toLowerCase()}`,
+    variables: { trackingCode: input.trackingCode, status: input.status },
+  });
+}

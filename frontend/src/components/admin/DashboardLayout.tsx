@@ -11,8 +11,8 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const role = useAuthStore((s) => s.user?.role);
-  const mode: 'admin' | 'technician' | 'frontdesk' =
-    role === 'TEKNISI' ? 'technician' : role === 'FRONTDESK' ? 'frontdesk' : 'admin';
+  const mode: 'admin' | 'technician' | 'frontdesk' | 'courier' =
+    role === 'TEKNISI' ? 'technician' : role === 'FRONTDESK' ? 'frontdesk' : role === 'KURIR' ? 'courier' : 'admin';
 
   return (
     <div className="min-h-screen bg-stone-100">

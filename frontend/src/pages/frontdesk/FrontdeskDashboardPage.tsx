@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/button';
 import { getBookings, getInvoices, getTickets, type InvoiceRow } from '../../lib/api';
 import { mapBookingRow, type BookingApiRow } from '../../lib/mappers';
 import { useAuthStore } from '../../store';
+import CourierAssignmentPanel from '../../components/courier/CourierAssignmentPanel';
 
 interface OverviewTicket {
   current_status: string;
@@ -159,6 +160,7 @@ export default function FrontdeskDashboardPage() {
       </section>
 
       <BookingSummaryCard bookings={pendingBookings} isLoading={bookingsLoading} />
+      <CourierAssignmentPanel />
     </div>
   );
 }

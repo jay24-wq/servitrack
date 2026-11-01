@@ -5,9 +5,20 @@ const BRANCH_ID = '22222222-2222-2222-2222-222222222222';
 const ADMIN_ID  = '33333333-3333-3333-3333-333333333333';
 const FRONT_ID  = '44444444-4444-4444-4444-444444444444';
 const TECH_ID   = '55555555-5555-5555-5555-555555555555';
+const COURIER_ID = '66666666-6666-6666-6666-666666666666';
 
 export async function seed(knex) {
   const password_hash = await bcrypt.hash('servitrack', 10);
+
+  await knex('roles')
+    .insert([
+      { code: 'admin', name: 'Admin' },
+      { code: 'frontdesk', name: 'Frontdesk' },
+      { code: 'teknisi', name: 'Teknisi' },
+      { code: 'kurir', name: 'Kurir' },
+    ])
+    .onConflict('code')
+    .merge(['name']);
 
   const roles = await knex('roles').select('id', 'code');
   const roleId = (code) => roles.find((r) => r.code === code)?.id;
@@ -46,6 +57,7 @@ export async function seed(knex) {
     { id: ADMIN_ID, role: 'admin',     name: 'Andra Wijaya',     email: 'admin@servitrack.id' },
     { id: FRONT_ID, role: 'frontdesk', name: 'Rani Kusumawati',  email: 'frontdesk@servitrack.id' },
     { id: TECH_ID,   role: 'teknisi',   name: 'Panendra Soma',    email: 'teknisi@servitrack.id' },
+    { id: COURIER_ID, role: 'kurir',    name: 'Angga Saputra',    email: 'kurir@servitrack.id' },
   ];
   for (const u of users) {
     await knex('users')
@@ -59,7 +71,15 @@ export async function seed(knex) {
         password_hash,
         is_active: true,
       })
-      .onConflict(['tenant_id', 'email']).merge({ password_hash, is_active: true, name: u.name });
+      .onConflict(['tenant_id', 'email']).merge({
+        role_id: roleId(u.role),
+        branch_id: BRANCH_ID,
+        password_hash,
+        is_active: true,
+        deleted_at: null,
+        name: u.name,
+        courier_status: 'OFFLINE',
+      });
   }
 
   const today = new Date().toISOString().slice(0, 10);

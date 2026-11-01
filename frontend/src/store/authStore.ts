@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { jwtDecode } from 'jwt-decode';
+import { logoutRequest } from '../lib/api';
 
 export type UserRole = 'ADMIN' | 'FRONTDESK' | 'TEKNISI' | 'KURIR';
-export type DemoRole = 'ADMIN' | 'TEKNISI' | 'FRONTDESK';
+export type DemoRole = 'ADMIN' | 'TEKNISI' | 'FRONTDESK' | 'KURIR';
 
 export interface AuthUser {
   id: string;
@@ -37,6 +38,14 @@ export const DEMO_USERS: Record<DemoRole, AuthUser> = {
     email: 'frontdesk@servitrack.id',
     name: 'Rani Kusumawati',
     role: 'FRONTDESK',
+    tenant_id: 't1',
+    plan: 'Pro',
+  },
+  KURIR: {
+    id: 'usr-kurir',
+    email: 'kurir@servitrack.id',
+    name: 'Angga Saputra',
+    role: 'KURIR',
     tenant_id: 't1',
     plan: 'Pro',
   },
@@ -106,6 +115,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    void logoutRequest().catch(() => undefined);
     persist(null, null);
     set({ user: null, token: null, isAuthenticated: false, isLoading: false });
   },
@@ -119,5 +129,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 export function homeForRole(role?: UserRole | string): string {
   if (role === 'TEKNISI') return '/technician';
   if (role === 'FRONTDESK') return '/frontdesk';
+  if (role === 'KURIR') return '/courier';
   return '/dashboard';
 }

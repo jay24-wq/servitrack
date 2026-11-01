@@ -48,6 +48,7 @@ interface Staff {
   whatsappNote?: string;
   owner?: boolean;
   active: boolean;
+  availability: 'ONLINE' | 'OFFLINE';
 }
 
 const ROLE_STYLE: Record<Role, string> = {
@@ -102,6 +103,7 @@ export default function StaffPage() {
     role: roleLabels[member.role] ?? 'Front Desk',
     whatsapp: member.phone || '',
     active: Boolean(member.is_active),
+    availability: member.courier_status === 'ONLINE' ? 'ONLINE' : 'OFFLINE',
   }));
   const counts = { Semua: stats.admin + stats.teknisi + stats.frontdesk + stats.kurir, Admin: stats.admin, Teknisi: stats.teknisi, 'Front Desk': stats.frontdesk, Kurir: stats.kurir };
   const activeCount = stats.active;
@@ -339,7 +341,7 @@ export default function StaffPage() {
                     No. WhatsApp operasional
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
-                    Status akun
+                     Status akun / availability
                   </th>
                   <th scope="col" className="px-5 py-3 text-right text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
                     Aksi
@@ -464,23 +466,16 @@ export default function StaffPage() {
                       </td>
 
                       <td className="px-4 py-4">
-                        <span
-                          className={cn(
-                            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs',
-                            member.active
-                              ? 'bg-emerald-50 font-medium text-emerald-600'
-                              : 'bg-neutral-100 font-medium text-neutral-500'
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'size-1.5 rounded-full',
-                              member.active ? 'bg-emerald-600' : 'bg-neutral-400'
-                            )}
-                            aria-hidden="true"
-                          />
-                          {member.active ? 'Aktif' : 'Non-aktif'}
-                        </span>
+                         <div className="flex flex-wrap items-center gap-1.5">
+                           <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs', member.active ? 'bg-emerald-50 font-medium text-emerald-600' : 'bg-neutral-100 font-medium text-neutral-500')}>
+                             <span className={cn('size-1.5 rounded-full', member.active ? 'bg-emerald-600' : 'bg-neutral-400')} aria-hidden="true" />
+                             {member.active ? 'Aktif' : 'Non-aktif'}
+                           </span>
+                           <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium', member.availability === 'ONLINE' ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500')}>
+                             <span className={cn('size-1.5 rounded-full', member.availability === 'ONLINE' ? 'bg-emerald-600' : 'bg-neutral-400')} aria-hidden="true" />
+                             {member.availability}
+                           </span>
+                         </div>
                       </td>
 
                       <td className="px-5 py-4">

@@ -22,6 +22,7 @@ import BookingCalendarPage from './pages/admin/BookingCalendarPage';
 import DashboardLayout from './components/admin/DashboardLayout';
 import RequireRole from './components/auth/RequireRole';
 import BookingPage from './pages/public/BookingPage';
+import CourierPage from './pages/courier/CourierPage';
 import { useBookingStore } from './store';
 
 function ResetBookingDateOnExit() {
@@ -198,6 +199,10 @@ function App() {
             </RequireRole>
           }
         />
+
+        <Route path="/courier" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierPage /></DashboardLayout></RequireRole>} />
+        <Route path="/courier/tasks" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierPage filter="tasks" /></DashboardLayout></RequireRole>} />
+        <Route path="/courier/history" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierPage filter="history" /></DashboardLayout></RequireRole>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

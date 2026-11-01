@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check, EnvelopeSimple, Eye, EyeSlash, LockKey, ShieldCheck, SquaresFour, Storefront, Wrench } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowRight, Check, EnvelopeSimple, Eye, EyeSlash, LockKey, ShieldCheck, SquaresFour, Storefront, Wrench, Scooter } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore, homeForRole, DEMO_USERS, type DemoRole } from '../../store';
@@ -9,6 +9,7 @@ const ROLE_OPTIONS: { value: DemoRole; label: string; hint: string; icon: typeof
   { value: 'ADMIN', label: 'Admin', hint: 'Dashboard & operasional', icon: SquaresFour },
   { value: 'FRONTDESK', label: 'Frontdesk', hint: 'Check-in & kasir', icon: Storefront },
   { value: 'TEKNISI', label: 'Teknisi', hint: 'Pengerjaan unit', icon: Wrench },
+  { value: 'KURIR', label: 'Kurir', hint: 'Pickup & delivery', icon: Scooter },
 ];
 
 export default function LoginPage() {

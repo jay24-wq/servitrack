@@ -22,6 +22,9 @@ import { publicRouter } from '@api/public';
 import { trackingRouter } from '@api/tracking';
 import { notificationRouter } from '@api/notifications';
 import { bookingCalendarRouter } from './api/booking-calendar';
+import { courierRouter } from './api/courier';
+import path from 'node:path';
+import { startAvailabilityScheduler } from './jobs/index';
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
@@ -58,6 +61,8 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/booking-calendar', bookingCalendarRouter);
+app.use('/api/courier', courierRouter);
+app.use('/uploads', express.static(path.resolve(process.env.UPLOAD_DIR || 'uploads')));
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
@@ -94,6 +99,7 @@ function startServer() {
   if (process.env.NODE_ENV !== 'test') {
     assertNonSuperuser().then(() => {
       _server = doListen();
+      startAvailabilityScheduler();
     });
   } else {
     _server = doListen();

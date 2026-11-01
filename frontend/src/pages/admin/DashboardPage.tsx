@@ -13,7 +13,6 @@ import {
   ArrowRight,
   TrendUp,
   WarningCircle,
-  UsersThree,
 } from '@phosphor-icons/react';
 import { CartesianGrid, Dot, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -573,13 +572,6 @@ export default function DashboardPage() {
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-3">
               <span className="text-xs font-normal text-stone-400">Shift: Pagi (08:30 – 17:30)</span>
-              <a
-                href="#"
-                className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 transition-colors hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-              >
-                <UsersThree weight="fill" className="size-4" /> Kelola penugasan bench
-                <ArrowRight weight="bold" className="size-3.5" />
-              </a>
             </div>
           </div>
         </div>

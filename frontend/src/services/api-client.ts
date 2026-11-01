@@ -55,6 +55,10 @@ export class ApiClient {
     return this.client.put<T>(url, data, config);
   }
 
+  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.client.patch<T>(url, data, config);
+  }
+
   async delete<T>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.delete<T>(url, config);
   }

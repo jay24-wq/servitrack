@@ -122,6 +122,18 @@ authRouter.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
   res.json({ user: req.user });
 });
 
+authRouter.post('/logout', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user?.user_id || !req.user.tenant_id) return res.status(401).json({ error: 'Identitas pengguna tidak ditemukan' });
+    await withTenantContext(req.user.tenant_id, async (trx) => {
+      await trx('users').where({ id: req.user!.user_id, tenant_id: req.user!.tenant_id }).update({ courier_status: 'OFFLINE', updated_at: trx.fn.now() });
+    });
+    return res.json({ message: 'Logout berhasil' });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Gagal logout' });
+  }
+});
+
 /**
  * POST /api/auth/login
  * Login pengguna dengan Email dan Password.
@@ -129,7 +141,9 @@ authRouter.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
  */
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password, slug } = req.body;
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    const slug = req.body.slug ? String(req.body.slug).trim().toLowerCase() : undefined;
 
     if (!email || !password) {
       res.status(400).json({ error: 'Email dan password wajib diisi' });
@@ -199,7 +213,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     }
 
     await withTenantContext(user.tenant_id, async (trx) => {
-      await trx('users').where({ id: user.user_id }).update({ last_login_at: new Date() });
+      await trx('users').where({ id: user.user_id, tenant_id: user.tenant_id }).update({ last_login_at: new Date(), courier_status: 'ONLINE' });
     });
 
     // JWT Payload dengan tenant_id secara eksplisit
