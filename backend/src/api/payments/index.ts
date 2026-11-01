@@ -78,15 +78,33 @@ paymentRouter.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const { invoice_id, method, amount, gateway_ref } = req.body;
-    if (!invoice_id || !method || !amount || amount <= 0) {
+    const paymentAmount = Number(amount);
+    if (!invoice_id || !method || !Number.isFinite(paymentAmount) || paymentAmount <= 0) {
       res.status(400).json({ error: 'Data pembayaran tidak valid' });
       return;
     }
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const invoice = await trx('invoices as i').join('service_tickets as t', 't.id', 'i.ticket_id')
-        .where({ 'i.id': invoice_id, 'i.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id }).select('i.*').first();
+      // Serialize payments for this invoice before reading its balance.
+      const invoice = await trx('invoices')
+        .where({ id: invoice_id, tenant_id })
+        .forUpdate()
+        .first();
       if (!invoice) throw new Error('Invoice tidak ditemukan');
+
+      const ticket = await trx('service_tickets')
+        .where({ id: invoice.ticket_id, tenant_id, branch_id: req.user?.branch_id })
+        .first();
+      if (!ticket) throw new Error('Invoice tidak ditemukan');
+
+      const [agg] = await trx('payments')
+        .where({ invoice_id, tenant_id, status: 'paid' })
+        .sum('amount as total_paid');
+      const totalPaid = Number(agg.total_paid) || 0;
+      const outstanding = Number(invoice.total) - totalPaid;
+      if (paymentAmount > outstanding) {
+        throw new Error('Pembayaran melebihi sisa tagihan');
+      }
 
       const [payment] = await trx('payments')
         .insert({
@@ -94,33 +112,21 @@ paymentRouter.post('/', async (req: AuthRequest, res: Response) => {
           invoice_id,
           received_by: req.user?.user_id,
           method,
-          amount,
+          amount: paymentAmount,
           status: 'paid',
           gateway_ref: gateway_ref || null,
           paid_at: new Date(),
         })
         .returning('*');
 
-      // Hitung total pembayaran yang sudah paid
-      const [agg] = await trx('payments')
-        .where({ invoice_id, tenant_id, status: 'paid' })
-        .sum('amount as total_paid');
-
-      const totalPaid = Number(agg.total_paid) || 0;
-      let newStatus = invoice.status;
-      if (totalPaid >= Number(invoice.total)) {
-        newStatus = 'paid';
-      } else {
-        newStatus = 'partial';
-      }
+      const newStatus = totalPaid + paymentAmount >= Number(invoice.total) ? 'paid' : 'partial';
 
       await trx('invoices')
         .where({ id: invoice_id, tenant_id })
         .update({ status: newStatus });
 
-        const ticket = await trx('service_tickets').where({ id: invoice.ticket_id, tenant_id, branch_id: req.user?.branch_id }).first();
-       const customer = await trx('customers').where({ id: ticket.customer_id, tenant_id }).select('phone_wa').first();
-       return { payment, invoice_status: newStatus, invoice, ticket, customerPhone: customer?.phone_wa ?? '' };
+        const customer = await trx('customers').where({ id: ticket.customer_id, tenant_id }).select('phone_wa').first();
+        return { payment, invoice_status: newStatus, invoice, ticket, customerPhone: customer?.phone_wa ?? '' };
      });
 
     void notifyPaymentReceived({
@@ -135,6 +141,7 @@ paymentRouter.post('/', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ data: result });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Gagal mencatat pembayaran' });
+    const status = error.message === 'Pembayaran melebihi sisa tagihan' ? 400 : 500;
+    res.status(status).json({ error: error.message || 'Gagal mencatat pembayaran' });
   }
 });

@@ -310,6 +310,77 @@ describe('Financial and Inventory Module Tests', () => {
     ).rejects.toThrow();
   });
 
+  it('should serialize concurrent payments and prevent overpayment', async () => {
+    const invoice = await db.transaction(async (trx) => {
+      await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
+      const [ticket] = await trx('service_tickets').insert({
+        tenant_id: tenantId,
+        branch_id: branchId,
+        customer_id: customerId,
+        device_id: deviceId,
+        received_by: userId,
+        ticket_code: 'SRV-RACE-' + Date.now(),
+        tracking_token: 'TOKEN-RACE-' + Date.now(),
+        service_method: 'dropoff',
+        complaint: 'Race condition test',
+        current_status: 'antrian',
+      }).returning('id');
+
+      const [createdInvoice] = await trx('invoices').insert({
+        tenant_id: tenantId,
+        ticket_id: ticket.id,
+        invoice_no: 'INV-RACE-' + Date.now(),
+        subtotal: 1000000,
+        total: 1000000,
+        status: 'unpaid',
+      }).returning('*');
+      return createdInvoice;
+    });
+
+    const pay = () => db.transaction(async (trx) => {
+      await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
+      const lockedInvoice = await trx('invoices')
+        .where({ id: invoice.id, tenant_id: tenantId })
+        .forUpdate()
+        .first();
+      const [agg] = await trx('payments')
+        .where({ invoice_id: invoice.id, tenant_id: tenantId, status: 'paid' })
+        .sum('amount as total_paid');
+      const outstanding = Number(lockedInvoice.total) - (Number(agg.total_paid) || 0);
+      if (1000000 > outstanding) throw new Error('Pembayaran melebihi sisa tagihan');
+
+      await trx('payments').insert({
+        tenant_id: tenantId,
+        invoice_id: invoice.id,
+        received_by: userId,
+        method: 'qris',
+        amount: 1000000,
+        status: 'paid',
+        paid_at: new Date(),
+      });
+      await trx('invoices').where({ id: invoice.id, tenant_id: tenantId }).update({ status: 'paid' });
+    });
+
+    const results = await Promise.allSettled([pay(), pay()]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const finalInvoice = await db.transaction(async (trx) => {
+      await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
+      return trx('invoices').where({ id: invoice.id }).first();
+    });
+    const totals = await db.transaction<Array<{ total: string | number | null }>>(async (trx) => {
+      await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
+      const rows = await trx('payments')
+        .where({ invoice_id: invoice.id, tenant_id: tenantId, status: 'paid' })
+        .sum('amount as total');
+      return rows as Array<{ total: string | number | null }>;
+    });
+    const [total] = totals;
+    expect(finalInvoice.status).toBe('paid');
+    expect(Number(total.total)).toBe(1000000);
+  });
+
   it('should generate valid ticket_code and record initial antrian status log', async () => {
     const newTicket = await db.transaction(async (trx) => {
       await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
