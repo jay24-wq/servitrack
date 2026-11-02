@@ -3,4 +3,4 @@
 -- =====================================================================
 
 ALTER TABLE bookings
-ADD COLUMN pickup_area VARCHAR(255);
+ADD COLUMN IF NOT EXISTS pickup_area VARCHAR(255);

@@ -16,7 +16,6 @@ yarn-error.log*
 # Vite
 .vite
 .cache
-/public
 
 # IDE
 *.swp
