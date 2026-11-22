@@ -7,8 +7,7 @@ export interface HistoryPart {
 
 export interface ServiceHistory {
   id: string;
-  device: string;
-  serial: string;
+  model: string;
   customer: string;
   complaint: string;
   parts: HistoryPart[];
@@ -27,8 +26,7 @@ export const SUCCESS_STATUSES: HistoryEndStatus[] = ['Selesai', 'Siap Diambil', 
 export const SERVICE_HISTORY: ServiceHistory[] = [
   {
     id: 'SRV0329104756',
-    device: 'ASUS ROG Strix G15',
-    serial: '1293812',
+    model: 'ASUS ROG Strix G15',
     customer: 'Rafi Mahendra',
     complaint: 'Charging tidak masuk, indikator kedip.',
     parts: [{ name: 'IC Power Asus ROG PM8150', qty: 1 }],
@@ -40,8 +38,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0471258934',
-    device: 'iPhone 14 Pro',
-    serial: 'SM-A51-9087',
+    model: 'iPhone 14 Pro',
     customer: 'Dewi Anggraini',
     complaint: 'Baterai cepat habis & kembung.',
     parts: [{ name: 'Baterai iPhone 14 Pro', qty: 1 }],
@@ -53,8 +50,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0364810273',
-    device: 'Apple MacBook Air M2 13"',
-    serial: 'M2-8812A',
+    model: 'Apple MacBook Air M2 13"',
     customer: 'Lestari Dewanti',
     complaint: 'Beberapa tombol keyboard tidak berfungsi.',
     parts: [{ name: 'Keyboard MacBook Pro M1', qty: 1 }],
@@ -66,8 +62,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0192837465',
-    device: 'Lenovo ThinkPad X1 Carbon Gen 9',
-    serial: 'TP-X1-2291',
+    model: 'Lenovo ThinkPad X1 Carbon Gen 9',
     customer: 'Bambang Irawan',
     complaint: 'Overheat dan kipas berisik.',
     parts: [
@@ -82,8 +77,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0551029384',
-    device: 'Samsung Galaxy S24 Ultra',
-    serial: 'SM-S928B-7H2K19',
+    model: 'Samsung Galaxy S24 Ultra',
     customer: 'Maya Kusuma',
     complaint: 'Layar bergaris setelah terjatuh.',
     parts: [{ name: 'LCD Samsung S24 Ultra', qty: 1 }],
@@ -95,8 +89,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0817374650',
-    device: 'HP Spectre x360 14',
-    serial: 'HP-SP-4417',
+    model: 'HP Spectre x360 14',
     customer: 'Hendra Gunawan',
     complaint: 'Unit tidak menyala sama sekali.',
     parts: [{ name: 'IC Power PMIC', qty: 1 }],
@@ -108,8 +101,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0273640518',
-    device: 'Poco X3 Pro',
-    serial: 'POCO-X3-1192',
+    model: 'Poco X3 Pro',
     customer: 'Siska Putri',
     complaint: 'Mati total setelah kena air.',
     parts: [],
@@ -121,8 +113,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0638492017',
-    device: 'Dell XPS 15 9520 OLED',
-    serial: 'XPS15-7781',
+    model: 'Dell XPS 15 9520 OLED',
     customer: 'Clara Melisa',
     complaint: 'Blue screen saat menjalankan aplikasi grafis.',
     parts: [],
@@ -134,8 +125,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0918273645',
-    device: 'ASUS ZenBook 14 OLED',
-    serial: 'ZB14-3320',
+    model: 'ASUS ZenBook 14 OLED',
     customer: 'Yusuf Maulana',
     complaint: 'Keyboard beberapa tombol mati.',
     parts: [{ name: 'Keyboard Module ASUS ZenBook 14', qty: 1 }],
@@ -147,8 +137,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0418293765',
-    device: 'iPhone 13',
-    serial: 'IP13-5567',
+    model: 'iPhone 13',
     customer: 'Angga Santos',
     complaint: 'Baterai drop cepat.',
     parts: [{ name: 'Baterai iPhone 13', qty: 1 }],
@@ -160,8 +149,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0736451029',
-    device: 'MacBook Pro M1 14"',
-    serial: 'MBP14-9081',
+    model: 'MacBook Pro M1 14"',
     customer: 'Rizal Fadillah',
     complaint: 'Layar berkedip pada sudut tertentu (flexgate).',
     parts: [
@@ -176,8 +164,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0284756391',
-    device: 'PC Rakitan Gaming',
-    serial: 'PCG-2291',
+    model: 'PC Rakitan Gaming',
     customer: 'Budi Santoso',
     complaint: 'Upgrade penyimpanan & reinstall OS.',
     parts: [{ name: 'SSD NVMe 1TB', qty: 1 }],
@@ -189,8 +176,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0564738291',
-    device: 'iPad Pro 11"',
-    serial: 'IPAD-4410',
+    model: 'iPad Pro 11"',
     customer: 'Nadia Pramesti',
     complaint: 'LCD pecah setelah jatuh.',
     parts: [{ name: 'LCD iPad Pro 11"', qty: 1 }],
@@ -202,8 +188,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0391827465',
-    device: 'Lenovo IdeaPad Slim 5',
-    serial: 'IP5-8891',
+    model: 'Lenovo IdeaPad Slim 5',
     customer: 'Rizal Fadillah',
     complaint: 'Upgrade SSD & reinstall sistem.',
     parts: [{ name: 'SSD SATA 512GB', qty: 1 }],
@@ -215,8 +200,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0172635480',
-    device: 'Samsung Galaxy A51',
-    serial: 'A51-7720',
+    model: 'Samsung Galaxy A51',
     customer: 'Putri Amelia',
     complaint: 'Layar retak & baterai boros.',
     parts: [
@@ -231,8 +215,7 @@ export const SERVICE_HISTORY: ServiceHistory[] = [
   },
   {
     id: 'SRV0648291037',
-    device: 'Xiaomi Redmi Note 12',
-    serial: 'RN12-3345',
+    model: 'Xiaomi Redmi Note 12',
     customer: 'Fajar Nugroho',
     complaint: 'Konektor cas rusak / patah.',
     parts: [],

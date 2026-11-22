@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { jwtDecode } from 'jwt-decode';
 import { logoutRequest } from '../lib/api';
 import { apiClient } from '../services/api-client';
+import { useBranchStore } from './branchStore';
 
 export type UserRole = 'ADMIN' | 'FRONTDESK' | 'TEKNISI' | 'KURIR';
 export type DemoRole = 'ADMIN' | 'TEKNISI' | 'FRONTDESK' | 'KURIR';
@@ -12,7 +13,9 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   tenant_id: string;
-  plan: string;
+  branch_id?: string | null;
+  avatar_data_url?: string | null;
+  time_zone?: string;
 }
 
 const STORAGE_KEY = 'servitrack.auth';
@@ -24,7 +27,6 @@ export const DEMO_USERS: Record<DemoRole, AuthUser> = {
     name: 'Andra Wijaya',
     role: 'ADMIN',
     tenant_id: 't1',
-    plan: 'Pro',
   },
   TEKNISI: {
     id: 'usr-teknisi',
@@ -32,7 +34,6 @@ export const DEMO_USERS: Record<DemoRole, AuthUser> = {
     name: 'Panendra Soma',
     role: 'TEKNISI',
     tenant_id: 't1',
-    plan: 'Pro',
   },
   FRONTDESK: {
     id: 'usr-frontdesk',
@@ -40,7 +41,6 @@ export const DEMO_USERS: Record<DemoRole, AuthUser> = {
     name: 'Rani Kusumawati',
     role: 'FRONTDESK',
     tenant_id: 't1',
-    plan: 'Pro',
   },
   KURIR: {
     id: 'usr-kurir',
@@ -48,7 +48,6 @@ export const DEMO_USERS: Record<DemoRole, AuthUser> = {
     name: 'Angga Saputra',
     role: 'KURIR',
     tenant_id: 't1',
-    plan: 'Pro',
   },
 };
 
@@ -61,6 +60,7 @@ interface AuthState {
   loginAs: (role: DemoRole) => AuthUser;
   logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
+  updateUser: (updates: Partial<AuthUser>) => void;
 }
 
 function loadPersisted(): { user: AuthUser | null; token: string | null } {
@@ -102,14 +102,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       name: decoded.name ?? decoded.email,
       role: String(decoded.role).toUpperCase() as UserRole,
       tenant_id: decoded.tenant_id,
-      plan: decoded.plan ?? 'Starter',
+      branch_id: decoded.branch_id ?? null,
     };
+    useBranchStore.getState().clearBranches();
     persist(user, token);
     set({ user, token, isAuthenticated: true, isLoading: false });
   },
 
   loginAs: (role: DemoRole) => {
     const user = DEMO_USERS[role];
+    useBranchStore.getState().clearBranches();
     persist(user, 'demo-token');
     set({ user, token: 'demo-token', isAuthenticated: true, isLoading: false });
     return user;
@@ -122,14 +124,23 @@ export const useAuthStore = create<AuthState>((set) => ({
       console.warn('[Auth] logout request gagal; session lokal tetap dihapus', error);
     }
     apiClient.clearToken();
+    useBranchStore.getState().clearBranches();
     persist(null, null);
     set({ user: null, token: null, isAuthenticated: false, isLoading: false });
   },
 
   setUser: (user) => {
+    useBranchStore.getState().clearBranches();
     persist(user, user ? 'demo-token' : null);
     set({ user, isAuthenticated: Boolean(user) });
   },
+
+  updateUser: (updates) => set((state) => {
+    if (!state.user) return state;
+    const user = { ...state.user, ...updates };
+    persist(user, state.token);
+    return { user };
+  }),
 }));
 
 export function homeForRole(role?: UserRole | string): string {

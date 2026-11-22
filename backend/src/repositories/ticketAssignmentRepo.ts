@@ -4,6 +4,7 @@ export const ACTIVE_TICKET_STATUSES = [
   'antrian',
   'pengecekan',
   'menunggu_part',
+  'menunggu_persetujuan',
   'pengerjaan',
   'quality_check',
 ] as const;
@@ -56,7 +57,6 @@ const WORKLOAD_SELECT = `
       AND t.branch_id = u.branch_id
   ) load ON true
   WHERE u.tenant_id = ?
-    AND (? IS NULL OR u.branch_id = ?)
     AND r.code = 'teknisi'
     AND u.is_active = true
     AND u.deleted_at IS NULL
@@ -70,10 +70,18 @@ const WORKLOAD_ORDER = `
     u.id ASC
 `;
 
-function workloadBindings(tenantId: string, branchId?: string, technicianId?: string): any[] {
-  const bindings: any[] = [ACTIVE_TICKET_STATUSES, tenantId, branchId ?? null, branchId ?? null];
-  if (technicianId) bindings.push(technicianId);
-  return bindings;
+function workloadQuery(tenantId: string, branchId?: string, technicianId?: string) {
+  const hasBranch = Boolean(branchId);
+  const hasTechnician = Boolean(technicianId);
+  const bindings: any[] = [ACTIVE_TICKET_STATUSES, tenantId];
+
+  if (hasBranch) bindings.push(branchId);
+  if (hasTechnician) bindings.push(technicianId);
+
+  return {
+    sql: `${WORKLOAD_SELECT}${hasBranch ? ' AND u.branch_id = ?' : ''}${hasTechnician ? ' AND u.id = ?' : ''} ${WORKLOAD_ORDER}`,
+    bindings,
+  };
 }
 
 export async function listTechnicianWorkload(
@@ -81,7 +89,8 @@ export async function listTechnicianWorkload(
   tenantId: string,
   branchId?: string
 ): Promise<TechnicianWorkload[]> {
-  const result = (await executor.raw(`${WORKLOAD_SELECT} ${WORKLOAD_ORDER}`, workloadBindings(tenantId, branchId))) as {
+  const query = workloadQuery(tenantId, branchId);
+  const result = (await executor.raw(query.sql, query.bindings)) as {
     rows: TechnicianWorkload[];
   };
   return result.rows;
@@ -92,10 +101,8 @@ export async function findLeastLoadedTechnician(
   tenantId: string,
   branchId?: string
 ): Promise<TechnicianWorkload | null> {
-  const result = (await executor.raw(
-    `${WORKLOAD_SELECT} ${WORKLOAD_ORDER} LIMIT 1`,
-    workloadBindings(tenantId, branchId)
-  )) as { rows: TechnicianWorkload[] };
+  const query = workloadQuery(tenantId, branchId);
+  const result = (await executor.raw(`${query.sql} LIMIT 1`, query.bindings)) as { rows: TechnicianWorkload[] };
   return result.rows[0] ?? null;
 }
 
@@ -105,10 +112,8 @@ export async function findActiveTechnician(
   technicianId: string,
   branchId?: string
 ): Promise<TechnicianWorkload | null> {
-  const result = (await executor.raw(
-    `${WORKLOAD_SELECT} AND u.id = ? ${WORKLOAD_ORDER} LIMIT 1`,
-    workloadBindings(tenantId, branchId, technicianId)
-  )) as { rows: TechnicianWorkload[] };
+  const query = workloadQuery(tenantId, branchId, technicianId);
+  const result = (await executor.raw(`${query.sql} LIMIT 1`, query.bindings)) as { rows: TechnicianWorkload[] };
   return result.rows[0] ?? null;
 }
 

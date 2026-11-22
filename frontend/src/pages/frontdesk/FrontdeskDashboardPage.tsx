@@ -16,7 +16,7 @@ import { OverviewMetric } from '../../components/frontdesk/OverviewMetric';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { getBookings, getInvoices, getTickets, type InvoiceRow } from '../../lib/api';
-import { mapBookingRow, type BookingApiRow } from '../../lib/mappers';
+import { canCheckInBooking, mapBookingRow, type BookingApiRow } from '../../lib/mappers';
 import { useAuthStore } from '../../store';
 import CourierAssignmentPanel from '../../components/courier/CourierAssignmentPanel';
 
@@ -63,7 +63,7 @@ export default function FrontdeskDashboardPage() {
   const pendingBookings = useMemo(
     () =>
       bookings
-        .filter((booking) => booking.status === 'MENUNGGU_CHECKIN')
+        .filter(canCheckInBooking)
         .sort(
           (a, b) =>
             new Date(b.raw.created_at ?? 0).getTime() - new Date(a.raw.created_at ?? 0).getTime()
@@ -79,7 +79,7 @@ export default function FrontdeskDashboardPage() {
     ACTIVE_TICKET_STATUSES.has(ticket.current_status)
   ).length;
   const unitSiapDiambil = tickets.filter((ticket) => ticket.current_status === 'siap_diambil').length;
-  const tagihanBelumLunas = invoices.filter((invoice) => invoice.status !== 'paid').length;
+  const tagihanBelumLunas = invoices.filter((invoice) => invoice.status === 'unpaid').length;
 
   return (
     <div className="page-enter flex flex-col gap-6">

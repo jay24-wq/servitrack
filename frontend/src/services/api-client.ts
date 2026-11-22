@@ -6,6 +6,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 export class ApiClient {
   private client: AxiosInstance;
   private accessToken: string | null = null;
+  private branchId: string | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -20,6 +21,8 @@ export class ApiClient {
       if (this.accessToken) {
         config.headers.Authorization = `Bearer ${this.accessToken}`;
       }
+      if (this.branchId) config.headers['X-Branch-Id'] = this.branchId;
+      else delete config.headers['X-Branch-Id'];
       return config;
     });
 
@@ -39,8 +42,13 @@ export class ApiClient {
     this.accessToken = token;
   }
 
+  setBranchId(branchId: string | null) {
+    this.branchId = branchId;
+  }
+
   clearToken() {
     this.accessToken = null;
+    this.branchId = null;
   }
 
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {

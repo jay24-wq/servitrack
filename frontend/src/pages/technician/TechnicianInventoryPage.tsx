@@ -3,19 +3,22 @@ import { Package, LockKey, MagnifyingGlass } from '@phosphor-icons/react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
-import { PARTS, angka, type Part } from '../../data/parts';
+import { useInventoryParts } from '../../hooks/useInventoryParts';
+import { formatInventoryNumber as angka, inventoryStockStatus, mapInventoryPart } from '../../lib/inventory-parts';
 
 export default function TechnicianInventoryPage() {
   const [query, setQuery] = useState('');
+  const { data: inventoryRows = [], isLoading, isError } = useInventoryParts('active');
+  const parts = useMemo(() => inventoryRows.map(mapInventoryPart), [inventoryRows]);
 
   const rows = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return PARTS.filter(
-      (part: Part) => keyword === '' || part.name.toLowerCase().includes(keyword) || part.id.toLowerCase().includes(keyword)
+    return parts.filter(
+      (part) => keyword === '' || part.name.toLowerCase().includes(keyword) || part.sku.toLowerCase().includes(keyword)
     );
-  }, [query]);
+  }, [parts, query]);
 
-  const lowStock = PARTS.filter((part) => part.stock < part.min).length;
+  const lowStock = parts.filter((part) => inventoryStockStatus(part.stock, part.minStock) !== 'Aman').length;
 
   return (
     <div className="page-enter flex flex-col gap-6">
@@ -50,7 +53,7 @@ export default function TechnicianInventoryPage() {
           />
         </div>
         <span className="text-xs leading-4 text-neutral-500 lg:ml-auto">
-          Menampilkan <span className="font-bold text-zinc-900">{rows.length}</span> dari {PARTS.length} suku cadang
+          Menampilkan <span className="font-bold text-zinc-900">{rows.length}</span> dari {parts.length} suku cadang
         </span>
       </div>
 
@@ -83,26 +86,33 @@ export default function TechnicianInventoryPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((part, index) => {
-                const menipis = part.stock < part.min;
+              {isLoading && (
+                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-stone-500" role="status">Memuat stok cabang…</td></tr>
+              )}
+              {isError && (
+                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-rose-700" role="alert">Gagal memuat inventory cabang. Muat ulang halaman untuk mencoba lagi.</td></tr>
+              )}
+              {!isLoading && !isError && rows.map((part, index) => {
+                const status = inventoryStockStatus(part.stock, part.minStock);
+                const lowStockPart = status !== 'Aman';
                 return (
                   <tr
                     key={part.id}
                     className={cn(
                       'border-t border-black/5 align-middle transition-colors hover:bg-sky-50/40',
-                      menipis ? 'bg-rose-50/20' : index % 2 === 1 && 'bg-stone-50/40'
+                      lowStockPart ? 'bg-rose-50/20' : index % 2 === 1 && 'bg-stone-50/40'
                     )}
                   >
                     <td className="px-4 py-4">
                       <span className="text-xs font-semibold leading-4 text-zinc-900">{part.name}</span>
                       <span className="mt-0.5 block font-mono text-[11px] leading-4 text-neutral-500">
-                        {part.id} · {part.spec}
+                        {part.sku} · {part.spec || 'Tanpa spesifikasi'}
                       </span>
                     </td>
                     <td className="px-4 py-4 text-center">
-                      {menipis ? (
+                      {lowStockPart ? (
                         <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold leading-4 text-rose-700 outline outline-1 outline-rose-200">
-                          Menipis: {part.stock} {part.unit}
+                          {status}: {part.stock} {part.unit}
                         </span>
                       ) : (
                         <span className="text-xs leading-4 text-zinc-900">
@@ -112,7 +122,7 @@ export default function TechnicianInventoryPage() {
                       )}
                     </td>
                     <td className="px-4 py-4 text-center text-xs font-medium leading-4 tabular-nums text-neutral-500">
-                      {part.min} {part.unit}
+                      {part.minStock} {part.unit}
                     </td>
                     <td className="px-4 py-4 text-center">
                       <span className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-100 px-2 py-0.5 font-mono text-xs font-normal leading-4 text-stone-700 outline outline-1 outline-black/5">
@@ -135,7 +145,7 @@ export default function TechnicianInventoryPage() {
                   </tr>
                 );
               })}
-              {rows.length === 0 && (
+              {!isLoading && !isError && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center">
                     <span className="block text-sm font-semibold text-neutral-900">Tidak ada suku cadang yang cocok</span>

@@ -22,9 +22,11 @@ const STATUS_TONE: Record<string, string> = {
   Antrian: 'bg-amber-50 text-amber-700 outline-amber-200',
   Pengecekan: 'bg-blue-50 text-sky-700 outline-blue-200',
   'Menunggu Part': 'bg-rose-50 text-rose-700 outline-rose-200',
+  'Menunggu Persetujuan': 'bg-amber-50 text-amber-800 outline-amber-200',
   Pengerjaan: 'bg-sky-50 text-sky-700 outline-sky-200',
   'Quality Control': 'bg-indigo-50 text-indigo-700 outline-indigo-200',
   Selesai: 'bg-emerald-50 text-emerald-700 outline-emerald-200',
+  Dibatalkan: 'bg-stone-100 text-stone-600 outline-stone-300',
 };
 
 function tanggalHariIni() {
@@ -166,7 +168,7 @@ export default function TechnicianDashboardPage() {
           <div className="min-w-0">
             <h2 className="text-sm font-bold leading-5 text-zinc-900">Quick Search</h2>
             <p className="text-xs leading-4 text-stone-600">
-              Cari tiket berdasarkan kode tiket, serial number, atau tipe perangkat.
+              Cari tiket berdasarkan kode tiket, nama pelanggan, atau model perangkat.
             </p>
           </div>
           <Link
@@ -186,8 +188,8 @@ export default function TechnicianDashboardPage() {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            aria-label="Cari tiket berdasarkan kode tiket, serial number, atau tipe perangkat"
-            placeholder="Cari Kode Tiket / Serial Number / Tipe Perangkat..."
+            aria-label="Cari tiket berdasarkan kode tiket, nama pelanggan, atau model perangkat"
+            placeholder="Cari kode tiket / pelanggan / model perangkat..."
             className="h-11 rounded-lg border-stone-200 bg-stone-50 pl-10 pr-3 caret-sky-600 shadow-none placeholder:text-stone-400 focus-visible:border-sky-500"
           />
         </div>

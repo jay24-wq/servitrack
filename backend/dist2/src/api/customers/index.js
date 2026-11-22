@@ -127,9 +127,9 @@ customerRouter.post('/:customerId/devices', async (req, res) => {
     try {
         const tenant_id = req.user?.tenant_id;
         const { customerId } = req.params;
-        const { type, brand, model, serial_number, notes } = req.body;
-        if (!type || !brand || !model) {
-            res.status(400).json({ error: 'Tipe, merek (brand), dan model perangkat wajib diisi' });
+        const { category, model } = req.body;
+        if (typeof category !== 'string' || !category.trim() || typeof model !== 'string' || !model.trim() || model.trim() === '-' || model.length > 80) {
+            res.status(400).json({ error: 'Kategori dan model perangkat wajib diisi (maksimal 80 karakter)' });
             return;
         }
         const customer = await db('customers').where({ id: customerId, tenant_id }).first();
@@ -141,11 +141,8 @@ customerRouter.post('/:customerId/devices', async (req, res) => {
             .insert({
             tenant_id,
             customer_id: customerId,
-            type,
-            brand,
+            category,
             model,
-            serial_number: serial_number || null,
-            notes: notes || null,
         })
             .returning('*');
         res.status(201).json({ message: 'Perangkat berhasil ditambahkan', data: newDevice });
@@ -159,15 +156,16 @@ customerRouter.put('/:customerId/devices/:deviceId', async (req, res) => {
     try {
         const tenant_id = req.user?.tenant_id;
         const { customerId, deviceId } = req.params;
-        const { type, brand, model, serial_number, notes } = req.body;
+        const { category, model } = req.body;
+        if (model !== undefined && (typeof model !== 'string' || !model.trim() || model.trim() === '-' || model.length > 80)) {
+            res.status(400).json({ error: 'Model perangkat wajib diisi (maksimal 80 karakter)' });
+            return;
+        }
         const [updated] = await db('devices')
             .where({ id: deviceId, customer_id: customerId, tenant_id })
             .update({
-            ...(type && { type }),
-            ...(brand && { brand }),
+            ...(category && { category }),
             ...(model && { model }),
-            ...(serial_number !== undefined && { serial_number }),
-            ...(notes !== undefined && { notes }),
         })
             .returning('*');
         if (!updated) {

@@ -7,6 +7,7 @@ import request from 'supertest';
 describe('Auth, Users, Customers - RLS & PlanGuard', () => {
   let adminToken1: string;
   let adminToken2: string;
+  let tenantIdTokoA: string;
   let userIdTokoA: string;
   let customerIdTokoA: string;
 
@@ -80,7 +81,7 @@ describe('Auth, Users, Customers - RLS & PlanGuard', () => {
     await db.destroy();
   });
 
-  it('should register toko-uji-1 and toko-uji-2', async () => {
+  it('should register test tenants with a duplicate email across tenants', async () => {
     const res1 = await request(app)
       .post('/api/auth/register')
       .send({
@@ -90,8 +91,17 @@ describe('Auth, Users, Customers - RLS & PlanGuard', () => {
         phone: '62812345678',
         email: 'owner1@test.com',
         password: 'password123',
+        address: 'Alamat workshop untuk pengujian',
+        latitude: -8.6705,
+        longitude: 115.2126,
       });
     expect(res1.status).toBe(201);
+    expect(res1.body.token).toBeDefined();
+    expect(res1.body.user.role).toBe('admin');
+    expect(res1.body.user.branch_id).toBeDefined();
+    expect(Number(res1.body.data.latitude)).toBeCloseTo(-8.6705);
+    expect(Number(res1.body.data.longitude)).toBeCloseTo(115.2126);
+    tenantIdTokoA = res1.body.data.tenant_id;
 
     const res2 = await request(app)
       .post('/api/auth/register')
@@ -102,33 +112,69 @@ describe('Auth, Users, Customers - RLS & PlanGuard', () => {
         phone: '62812345679',
         email: 'owner2@test.com',
         password: 'password123',
+        address: 'Jl. Raya Serpong, Tangerang Selatan',
+        latitude: -6.3021,
+        longitude: 106.6522,
       });
     expect(res2.status).toBe(201);
+
+    const duplicateEmail = await request(app)
+      .post('/api/auth/register')
+      .send({
+        tenant_name: 'Toko Uji 3',
+        slug: 'toko-uji-3',
+        owner_name: 'Owner 1 Duplikat',
+        phone: '62812345680',
+        email: 'owner1@test.com',
+        password: 'different-password-123',
+        address: 'Jl. Sunset Road, Badung, Bali',
+        latitude: -8.6951,
+        longitude: 115.1762,
+      });
+    expect(duplicateEmail.status).toBe(201);
   });
 
-  it('should login owner1 and get token', async () => {
+  it('should login owner1 without a tenant slug and get token', async () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({
         email: 'owner1@test.com',
         password: 'password123',
-        slug: 'toko-uji-1',
       });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
+    expect(res.body.user.role).toBe('admin');
+    expect(res.body.user.tenant_id).toBe(tenantIdTokoA);
     adminToken1 = res.body.token;
   });
 
-  it('should login owner2 and get token', async () => {
+  it('should login owner2 without a tenant slug and get token', async () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({
         email: 'owner2@test.com',
         password: 'password123',
-        slug: 'toko-uji-2',
       });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
     adminToken2 = res.body.token;
   });
+
+  it('should list only branches owned by the authenticated tenant', async () => {
+    const res = await request(app)
+      .get('/api/branches')
+      .set('Authorization', `Bearer ${adminToken1}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBe(1);
+    expect(res.body.data.every((branch: { tenant_id: string }) => branch.tenant_id === tenantIdTokoA)).toBe(true);
+  });
+
+  it('should reject an owner from the staff portal without a tenant slug', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'owner1@test.com', password: 'password123', portal: 'staff' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Silakan gunakan Portal Admin.');
+  });
+
 });

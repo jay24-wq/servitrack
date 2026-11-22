@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowsClockwise, MapPin, UserCircleCheck } from '@phosphor-icons/react';
+import { ArrowsClockwise, MapPin, Phone, UserCircleCheck } from '@phosphor-icons/react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { assignCourier, getCourierAssignmentQueue, getCourierRecommendations, type CourierQueueItem } from '../../lib/api';
 
-interface Candidate { id: string; name: string; active_tasks: number; recommended: boolean; reason: string }
+interface Candidate { id: string; name: string; phone: string | null; active_tasks: number; recommended: boolean; reason: string }
 
 export default function CourierAssignmentPanel() {
   const [candidates, setCandidates] = useState<Record<string, Candidate[]>>({});
@@ -86,7 +86,7 @@ export default function CourierAssignmentPanel() {
               {!candidates[item.id] && <Button size="sm" disabled={busy === item.id} onClick={() => void recommend(item)}>Assign</Button>}
             </div>
             {candidates[item.id] && <div className="mt-3 grid gap-2 border-t border-stone-100 pt-3">
-              {candidates[item.id].length === 0 ? <p className="text-xs text-rose-600">Tidak ada kurir ONLINE di cabang ini.</p> : candidates[item.id].map((candidate) => <div key={candidate.id} className="flex flex-col gap-2 rounded-md bg-stone-50 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><UserCircleCheck className="size-5 text-sky-600" weight="fill" /><div><p className="text-xs font-bold text-zinc-900">{candidate.name} {candidate.recommended && <Badge className="ml-1 bg-sky-50 text-sky-700">Direkomendasikan</Badge>}</p><p className="text-[11px] text-stone-500">{candidate.reason}</p></div></div><Button size="sm" disabled={busy === item.id} onClick={() => void assign(item, candidate)}>Assign</Button></div>)}
+              {candidates[item.id].length === 0 ? <p className="text-xs text-rose-600">Tidak ada kurir ONLINE di cabang ini.</p> : candidates[item.id].map((candidate) => <div key={candidate.id} className="flex flex-col gap-2 rounded-md bg-stone-50 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><UserCircleCheck className="size-5 text-sky-600" weight="fill" /><div><p className="text-xs font-bold text-zinc-900">{candidate.name} {candidate.recommended && <Badge className="ml-1 bg-sky-50 text-sky-700">Direkomendasikan</Badge>}</p><p className="mt-1 text-[11px] text-stone-600">{candidate.phone ? <a className="inline-flex items-center gap-1 underline underline-offset-2" href={`tel:${candidate.phone.startsWith('+') || candidate.phone.startsWith('0') ? candidate.phone : `+${candidate.phone}`}`}><Phone className="size-3" />{candidate.phone}</a> : 'No handphone belum diatur'}</p><p className="text-[11px] text-stone-500">{candidate.reason}</p></div></div><Button size="sm" disabled={busy === item.id} onClick={() => void assign(item, candidate)}>Assign</Button></div>)}
             </div>}
           </article>
         ))}

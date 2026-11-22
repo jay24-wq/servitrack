@@ -7,10 +7,45 @@ reportsRouter.use(authMiddleware);
 reportsRouter.use(tenantResolver);
 reportsRouter.use(branchResolver);
 
+reportsRouter.get('/technician-workflow', async (req: AuthRequest, res: Response) => {
+  try {
+    const tenantId = req.user?.tenant_id;
+    if (!tenantId) return res.status(401).json({ error: 'Tenant tidak teridentifikasi' });
+    const query = reqDb(req)('service_tickets as t').where('t.tenant_id', tenantId);
+    applyBranch(query, req.user?.branch_id, 't.branch_id');
+    if (['without_parts', 'with_parts'].includes(String(req.query.work_type))) query.where('t.work_type', String(req.query.work_type));
+    if (['matches_complaint', 'additional_damage'].includes(String(req.query.diagnosis_status))) query.where('t.diagnosis_status', String(req.query.diagnosis_status));
+    if (['approved', 'rejected', 'expired'].includes(String(req.query.quotation_status))) {
+      query.whereRaw(`COALESCE((SELECT q.status FROM quotations q WHERE q.ticket_id = t.id ORDER BY q.created_at DESC LIMIT 1), '') = ?`, [String(req.query.quotation_status)]);
+    }
+    const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 365 * 86_400_000);
+    const to = req.query.to ? new Date(`${String(req.query.to).slice(0, 10)}T23:59:59.999Z`) : new Date();
+    if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) query.whereBetween('t.created_at', [from, to]);
+
+    const rows = await query.select(
+      't.id', 't.ticket_code', 't.current_status', 't.work_type', 't.diagnosis_status', 't.diagnostic_fee', 't.created_at',
+      reqDb(req).raw(`(SELECT q.status FROM quotations q WHERE q.ticket_id = t.id ORDER BY q.created_at DESC LIMIT 1) AS quotation_status`),
+      reqDb(req).raw(`(SELECT EXTRACT(EPOCH FROM (q.decided_at - q.created_at))::bigint FROM quotations q WHERE q.ticket_id = t.id AND q.decided_at IS NOT NULL ORDER BY q.created_at DESC LIMIT 1) AS approval_response_seconds`),
+      reqDb(req).raw(`(
+        SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE((
+          SELECT MIN(next_log.created_at) FROM ticket_status_logs next_log
+          WHERE next_log.ticket_id = wait_log.ticket_id AND next_log.created_at > wait_log.created_at
+        ), now()) - wait_log.created_at))), 0)::bigint
+        FROM ticket_status_logs wait_log
+        WHERE wait_log.ticket_id = t.id AND wait_log.to_status = 'menunggu_part'
+      ) AS waiting_part_seconds`)
+    ).orderBy('t.created_at', 'desc').limit(500);
+    return res.json({ data: rows, filters: { work_type: req.query.work_type ?? null, diagnosis_status: req.query.diagnosis_status ?? null, quotation_status: req.query.quotation_status ?? null } });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Gagal mengambil laporan workflow teknisi' });
+  }
+});
+
 const ACTIVE_STATUSES = [
   'antrian', 
   'pengecekan', 
   'menunggu_part', 
+  'menunggu_persetujuan',
   'pengerjaan', 
   'quality_check'
 ];
@@ -21,10 +56,12 @@ const STATUS_LABELS: Record<string, string> = {
   antrian: 'Antrian', 
   pengecekan: 'Pengecekan', 
   menunggu_part: 'Menunggu Part', 
+  menunggu_persetujuan: 'Menunggu Persetujuan',
   pengerjaan: 'Pengerjaan', 
   quality_check: 'Quality Control', 
   selesai: 'Selesai', 
-  siap_diambil: 'Siap Diambil' 
+  siap_diambil: 'Siap Diambil',
+  batal: 'Dibatalkan'
 };
 
 const METHODS = ['cash', 'qris', 'va', 'ewallet'];
@@ -84,7 +121,7 @@ async function dashboardData(
   const invoiceSum = async (start: Date, end: Date) => {
     const q = dbq('invoices')
       .where({ 'invoices.tenant_id': tenant_id })
-      .whereIn('invoices.status', ['unpaid', 'partial'])
+      .where('invoices.status', 'unpaid')
       .whereBetween('invoices.issued_at', [start, end]);
 
     applyBranch(q, branch_id, 'service_tickets.branch_id');
@@ -270,7 +307,7 @@ async function dashboardData(
       'i.tenant_id': tenant_id, 
       't.branch_id': branch_id 
     })
-    .whereIn('i.status', ['unpaid', 'partial'])
+    .where('i.status', 'unpaid')
     .whereBetween('i.issued_at', [from, to])
     .select(
       dbq.raw(`CASE 
@@ -372,6 +409,7 @@ reportsRouter.get('/audit', async (req: AuthRequest, res: Response) => {
 
     const base = reqDb(req)('audit_logs as a')
       .leftJoin('users as u', 'a.user_id', 'u.id')
+      .leftJoin('roles as r', 'r.id', 'u.role_id')
       .where('a.tenant_id', tenant_id)
       .whereBetween('a.created_at', [from, to])
       .modify((query) => { 
@@ -386,8 +424,9 @@ reportsRouter.get('/audit', async (req: AuthRequest, res: Response) => {
             builder
               .whereILike('a.action', `%${search}%`)
               .orWhereILike('a.entity_type', `%${search}%`)
-              .orWhereRaw('a.entity_id::text ILIKE ?', [`%${search}%`])
               .orWhereILike('u.name', `%${search}%`)
+              .orWhereRaw('a.old_values::text ILIKE ?', [`%${search}%`])
+              .orWhereRaw('a.new_values::text ILIKE ?', [`%${search}%`])
             ); 
           }
         );
@@ -395,8 +434,8 @@ reportsRouter.get('/audit', async (req: AuthRequest, res: Response) => {
     const count = await base.clone().clearSelect().clearOrder().count('a.id as count').first(); 
     const rows = await base.clone()
       .select(
-        'a.id', 'a.created_at', 'a.action', 'a.entity_type', 'a.entity_id', 
-        'a.old_values', 'a.new_values', 'a.ip_address', 'u.name as actor'
+        'a.id', 'a.created_at', 'a.action', 'a.entity_type',
+        'a.old_values', 'a.new_values', 'u.name as actor', 'r.code as actor_role'
       )
       .orderBy('a.created_at', 'desc')
       .limit(limit)
@@ -418,23 +457,26 @@ reportsRouter.get('/audit', async (req: AuthRequest, res: Response) => {
       .distinct('action')
       .pluck('action');
 
+    const roleLabels: Record<string, string> = {
+      admin: 'Admin',
+      frontdesk: 'Frontdesk',
+      teknisi: 'Teknisi',
+      kurir: 'Kurir',
+    };
     const data = rows.map((row: any) => ({ 
       id: row.id, 
       at: new Date(row.created_at).toLocaleString('id-ID'), 
       actor: row.actor || 'Sistem', 
-      role: row.actor ? 'Staff' : 'Sistem', 
+      role: row.actor ? roleLabels[row.actor_role] || 'Staff' : 'Sistem', 
       action: row.action, 
       actionTone: row.action.includes('delete') || row.action.includes('failed') 
         ? 'rose'
         : row.action.includes('create') || row.action.includes('paid')
          ? 'emerald' 
          : 'sky', 
-      entity: row.entity_id || '-', 
       entityType: row.entity_type, 
-      summary: `${row.action} pada ${row.entity_type}`, 
-      before: JSON.stringify(row.old_values || '-'), 
-      after: JSON.stringify(row.new_values || '-'), 
-      ip: row.ip_address || '-' 
+      before: row.old_values ?? null, 
+      after: row.new_values ?? null,
     }));
 
     return res.json({ 

@@ -1,8 +1,8 @@
+import { useNavigate } from 'react-router-dom';
 import {
   MagnifyingGlass,
   Bell,
   List,
-  Users,
   ClipboardText,
   Receipt,
   Package,
@@ -91,12 +91,12 @@ interface TopbarProps {
 }
 
 export default function Topbar({ onOpenMenu }: TopbarProps) {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
   const name = user?.name ?? 'Andra Wijaya';
   const email = user?.email ?? 'admin@servitrack.id';
-  const plan = user?.plan ? `${user.plan.charAt(0).toUpperCase()}${user.plan.slice(1)} Plan` : 'Starter Plan';
   const initials = name
     .split(' ')
     .slice(0, 2)
@@ -119,11 +119,6 @@ export default function Topbar({ onOpenMenu }: TopbarProps) {
         <LedgerSearch className="hidden max-w-md flex-1 md:block" />
 
         <div className="ml-auto flex items-center gap-2 md:gap-3">
-          <div className="hidden items-center gap-2 rounded-full border border-sky-200/80 bg-sky-50 px-3 py-1.5 lg:flex">
-            <Users weight="fill" className="size-4 text-sky-700" />
-            <span className="text-xs font-bold tracking-tight text-sky-700">{plan} - 3/3 Users</span>
-          </div>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -177,25 +172,27 @@ export default function Topbar({ onOpenMenu }: TopbarProps) {
                 aria-label="Menu profil"
                 className="rounded-full p-0.5 transition-colors hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
               >
-                <UserAvatar seed={name} initials={initials} alt={`Avatar ${name}`} />
+                <UserAvatar seed={name} initials={initials} alt={`Avatar ${name}`} imageSrc={user?.avatar_data_url} />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-64">
               <DropdownMenuLabel className="text-stone-400">Masuk sebagai</DropdownMenuLabel>
               <div className="mb-1 flex items-center gap-3 px-2.5 pb-2.5">
-                <UserAvatar seed={name} initials={initials} alt={`Avatar ${name}`} className="size-10" />
+                <UserAvatar seed={name} initials={initials} alt={`Avatar ${name}`} imageSrc={user?.avatar_data_url} className="size-10" />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-neutral-900">{name}</p>
                   <p className="truncate text-xs text-stone-500">{email}</p>
                 </div>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => navigate('/settings/account')}>
                 <User weight="fill" className="text-stone-400" /> Profil saya
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Gear weight="fill" className="text-stone-400" /> Pengaturan akun
-              </DropdownMenuItem>
+              {user?.role === 'ADMIN' && (
+                <DropdownMenuItem onSelect={() => navigate('/settings')}>
+                  <Gear weight="fill" className="text-stone-400" /> Pengaturan akun
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => logout()} className="text-red-600 focus:text-red-600">
                 <SignOut weight="fill" className="text-red-500" /> Keluar

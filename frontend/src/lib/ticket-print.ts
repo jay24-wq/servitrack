@@ -1,6 +1,8 @@
 import QRCode from 'qrcode';
 import type { InvoiceRow } from './api';
 import { invoiceFromTicket } from './ticket-code';
+import { getDeviceDisplayName } from '../../../common/utils/device';
+import { buildServiceStatusNotification } from '../../../common/utils/whatsappTemplates';
 
 export interface PrintableTicket {
   id: string;
@@ -8,25 +10,19 @@ export interface PrintableTicket {
   tracking_code?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
-  device_label?: string | null;
+  device_model?: string | null;
   complaint?: string | null;
   technician_name?: string | null;
   uiStatus?: string | null;
   current_status?: string | null;
   service_method?: string | null;
+  workshop_name?: string | null;
+  branch_name?: string | null;
+  branch_address?: string | null;
   estimated_done_at?: string | null;
   final_cost?: number | null;
   created_at?: string | null;
 }
-
-const STATUS_MESSAGES: Record<string, string> = {
-  Antrian: 'unit sudah kami terima dan saat ini sedang menunggu antrean pengerjaan',
-  Pengecekan: 'unit sedang dalam proses pemeriksaan oleh teknisi kami',
-  Pengerjaan: 'unit sedang dikerjakan oleh teknisi kami',
-  'Menunggu Part': 'pengerjaan sedang menunggu ketersediaan spare part',
-  'Quality Control': 'unit sedang melalui tahap quality control',
-  Selesai: 'unit sudah selesai dan siap diambil atau dikirim kembali',
-};
 
 const SERVICE_METHOD_LABEL: Record<string, string> = {
   dropoff: 'Drop-off',
@@ -58,7 +54,7 @@ const formatDate = (value?: string | null) => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+  return date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' });
 };
 
 export function normalizeWhatsAppNumber(phone?: string | null) {
@@ -70,24 +66,18 @@ export function normalizeWhatsAppNumber(phone?: string | null) {
 }
 
 export function getTrackingUrl(ticket: PrintableTicket) {
-  const code = ticket.tracking_code || ticket.ticket_code;
+  const code = String(ticket.tracking_code ?? '').trim();
+  if (!code) throw new Error('tracking_code wajib tersedia untuk membuat tautan Live Tracking.');
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
   return `${origin}/tracking?resi=${encodeURIComponent(code)}`;
 }
 
 export function buildServiceStatusMessage(ticket: PrintableTicket) {
-  const firstName = ticket.customer_name?.trim().split(/\s+/)[0] || 'Kak';
-  const status = ticket.uiStatus || ticket.current_status || 'Antrian';
-  const summary = STATUS_MESSAGES[status] ?? 'sedang kami proses';
-  const trackingUrl = getTrackingUrl(ticket);
-  const device = ticket.device_label ? ` untuk unit ${ticket.device_label}` : '';
-
-  return [
-    `Halo ${firstName}, kami dari ServiTrack.`,
-    `Tiket servis ${ticket.ticket_code}${device} ${summary}.`,
-    `Pantau progres terbaru di: ${trackingUrl}`,
-    'Terima kasih.',
-  ].join('\n');
+  return buildServiceStatusNotification({
+    trackingCode: ticket.tracking_code,
+    status: ticket.current_status,
+    trackingUrl: getTrackingUrl(ticket),
+  });
 }
 
 export function buildWhatsAppUrl(phone: string, message: string) {
@@ -111,7 +101,7 @@ function printWindow(title: string, body: string, options?: { width?: number; he
     body { margin: 0; padding: 24px; color: #171717; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px; line-height: 1.5; }
     h1 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
     h2 { margin: 4px 0 20px; color: #57534e; font-size: 12px; font-weight: 600; }
-    .brand { color: #0369a1; }
+    .service-name { color: #0369a1; }
     .muted { color: #78716c; }
     .divider { margin: 16px 0; border-top: 1px dashed #d6d3d1; }
     .row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; }
@@ -134,7 +124,9 @@ function printWindow(title: string, body: string, options?: { width?: number; he
 
 function ticketHeader(ticket: PrintableTicket) {
   return `
-    <h1>ServiTrack <span class="brand">Service Center</span></h1>
+    <h1>${escapeHtml(ticket.workshop_name || 'ServiTrack')}</h1>
+    <div class="muted">${escapeHtml(ticket.branch_name || 'Cabang tidak diketahui')}</div>
+    <div class="muted">${escapeHtml(ticket.branch_address || 'Alamat cabang tidak tersedia')}</div>
     <h2>${escapeHtml(ticket.ticket_code)}</h2>
   `;
 }
@@ -167,7 +159,7 @@ export function printReceipt(ticket: PrintableTicket) {
     `${ticketHeader(ticket)}
     <div class="row"><span class="label">Pelanggan</span><span>${escapeHtml(ticket.customer_name || '—')}</span></div>
     <div class="row"><span class="label">WhatsApp</span><span>${escapeHtml(ticket.customer_phone || '—')}</span></div>
-    <div class="row"><span class="label">Perangkat</span><span>${escapeHtml(ticket.device_label || '—')}</span></div>
+    <div class="row"><span class="label">Perangkat</span><span>${escapeHtml(getDeviceDisplayName(ticket.device_model))}</span></div>
     <div class="row"><span class="label">Layanan</span><span>${escapeHtml(SERVICE_METHOD_LABEL[ticket.service_method || ''] || ticket.service_method || '—')}</span></div>
     <div class="row"><span class="label">Teknisi</span><span>${escapeHtml(ticket.technician_name || 'Belum ditugaskan')}</span></div>
     <div class="row"><span class="label">Diterima</span><span>${escapeHtml(formatDate(ticket.created_at))}</span></div>
@@ -189,23 +181,35 @@ export function printInvoice(ticket: PrintableTicket, invoice?: InvoiceRow | nul
   const additionalCost = Number(invoice?.additional_cost ?? 0);
   const discount = Number(invoice?.discount ?? 0);
   const total = Number(invoice?.total ?? subtotal + pickupFee + additionalCost - discount);
+  const statusLabel = invoice?.status === 'paid' ? 'Lunas' : invoice?.status === 'cancelled' ? 'Batal' : invoice?.status === 'unpaid' ? 'Belum bayar' : invoice?.status ?? 'Belum ada invoice';
+  const methodLabel: Record<string, string> = {
+    cash: 'Tunai', bank_transfer: 'Transfer bank manual', qris_static: 'QRIS statis', ewallet: 'E-wallet', edc: 'Kartu / EDC', midtrans: 'Midtrans Online',
+  };
+  const lineItems = Array.isArray(invoice?.line_items) ? invoice.line_items : [];
+  const itemRows = lineItems.length
+    ? lineItems.map((item) => `<div class="row"><span class="label">${escapeHtml(item.name)} <span class="muted">(${escapeHtml(item.quantity)} × ${escapeHtml(formatCurrency(Number(item.unit_price)))})</span></span><span>${escapeHtml(formatCurrency(Number(item.total)))}</span></div>`).join('')
+    : `<div class="row"><span class="label">Subtotal jasa &amp; part</span><span>${escapeHtml(formatCurrency(subtotal))}</span></div>
+       <div class="row"><span class="label">Ongkir pickup</span><span>${escapeHtml(formatCurrency(pickupFee))}</span></div>
+       <div class="row"><span class="label">Biaya cek / diagnosa</span><span>${escapeHtml(formatCurrency(additionalCost))}</span></div>`;
 
   return printWindow(
-    `Invoice ${invoiceNo}`,
+    `${invoice?.status === 'paid' ? 'Struk' : 'Invoice'} ${invoiceNo}`,
     `${ticketHeader(ticket)}
     <div class="row"><span class="label">No. invoice</span><span class="code">${escapeHtml(invoiceNo)}</span></div>
     <div class="row"><span class="label">Pelanggan</span><span>${escapeHtml(ticket.customer_name || invoice?.customer_name || '—')}</span></div>
-    <div class="row"><span class="label">Perangkat</span><span>${escapeHtml(ticket.device_label || '—')}</span></div>
-    <div class="row"><span class="label">Status bayar</span><span>${escapeHtml(invoice?.status ?? 'Belum ada invoice')}</span></div>
+    <div class="row"><span class="label">Perangkat</span><span>${escapeHtml(getDeviceDisplayName(ticket.device_model))}</span></div>
+    <div class="row"><span class="label">Status bayar</span><span>${escapeHtml(statusLabel)}</span></div>
     <div class="divider"></div>
-    <div class="row"><span class="label">Subtotal jasa & part</span><span>${escapeHtml(formatCurrency(subtotal))}</span></div>
-    <div class="row"><span class="label">Ongkir pickup</span><span>${escapeHtml(formatCurrency(pickupFee))}</span></div>
-    <div class="row"><span class="label">Biaya tambahan</span><span>${escapeHtml(formatCurrency(additionalCost))}</span></div>
+    ${itemRows}
     <div class="row"><span class="label">Diskon</span><span>-${escapeHtml(formatCurrency(discount))}</span></div>
     <div class="divider"></div>
     <div class="row"><span class="label"><strong>Total</strong></span><span>${escapeHtml(formatCurrency(total))}</span></div>
+    ${invoice?.status === 'paid' ? `<div class="row"><span class="label">Metode</span><span>${escapeHtml(methodLabel[String(invoice.method ?? '')] || invoice.method || '—')}</span></div>
+      <div class="row"><span class="label">Referensi</span><span>${escapeHtml(invoice.reference_no || '—')}</span></div>
+      <div class="row"><span class="label">Tanggal bayar</span><span>${escapeHtml(formatDate(invoice.paid_at == null ? null : String(invoice.paid_at)))}</span></div>
+      ${invoice.cash_received ? `<div class="row"><span class="label">Uang diterima</span><span>${escapeHtml(formatCurrency(Number(invoice.cash_received)))}</span></div><div class="row"><span class="label">Kembalian</span><span>${escapeHtml(formatCurrency(Number(invoice.change_amount)))}</span></div>` : ''}` : ''}
     <div class="box center">
-      <span class="muted">Invoice ini dibuat dari data tiket ${escapeHtml(ticket.ticket_code)}.</span>
+      <span class="muted">${invoice?.status === 'paid' ? 'Terima kasih, pembayaran telah diterima.' : `Invoice ini dibuat dari snapshot biaya tiket ${escapeHtml(ticket.ticket_code)}.`}</span>
     </div>`
   );
 }

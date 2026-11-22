@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   MagnifyingGlass,
-  DownloadSimple,
   QrCode,
   Plus,
   CaretDown,
-  CaretLeft,
-  CaretRight,
   Wrench,
   CalendarBlank,
   DotsThreeVertical,
@@ -26,6 +23,7 @@ import {
 import { TrackingCode } from '../../components/admin/TrackingCode';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
+import DataTablePagination from '../../components/ui/data-table-pagination';
 import { Input } from '../../components/ui/input';
 import {
   Sheet,
@@ -44,18 +42,21 @@ import {
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
 import { cn } from '../../lib/utils';
-import { type QueueStatus } from '../../store';
+import { useAuthStore, type QueueStatus } from '../../store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   assignTicketTechnician,
+  decideTicketQuotationManually,
+  createInvoice,
   getInvoices,
   getTechnicianWorkload,
   getTicket,
+  retryTicketQuotation,
   getTickets,
   updateTicketStatus,
   type TechnicianWorkload,
 } from '../../lib/api';
-import { DB_STATUS_MAP } from '../../lib/mappers';
+import { DB_STATUS_MAP, getDeviceDisplayName } from '../../lib/mappers';
 import {
   buildServiceStatusMessage,
   buildWhatsAppUrl,
@@ -66,6 +67,7 @@ import {
 } from '../../lib/ticket-print';
 
 type Status = QueueStatus;
+const ROWS_PER_PAGE = 10;
 
 interface ServiceTicket {
   id: string;
@@ -77,7 +79,9 @@ interface ServiceTicket {
   created_at: string;
   customer_name?: string;
   customer_phone?: string;
-  device_label?: string;
+  device_model?: string | null;
+  branch_name?: string | null;
+  branch_address?: string | null;
   technician_id?: string | null;
   technician_name?: string;
   technician_initials?: string;
@@ -93,11 +97,14 @@ const STATUS_STYLE: Record<Status, string> = {
   Pengecekan: 'bg-sky-50 text-sky-700',
   Pengerjaan: 'bg-sky-100 text-sky-700',
   'Menunggu Part': 'bg-red-500/20 text-red-700',
+  'Menunggu Persetujuan': 'bg-amber-100 text-amber-800',
   'Quality Control': 'bg-zinc-100 text-gray-700',
   Selesai: 'bg-sky-100 text-sky-700',
+  'Siap Diambil': 'bg-violet-100 text-violet-700',
+  Dibatalkan: 'bg-stone-200 text-stone-600',
 };
 
-const STATUS_ORDER: Status[] = ['Antrian', 'Pengecekan', 'Pengerjaan', 'Menunggu Part', 'Quality Control', 'Selesai'];
+const STATUS_ORDER: Status[] = ['Antrian', 'Pengecekan', 'Menunggu Part', 'Menunggu Persetujuan', 'Pengerjaan', 'Quality Control', 'Selesai', 'Siap Diambil', 'Dibatalkan'];
 
 const STATUS_DB_OPTIONS = [
   { value: 'antrian', label: 'Antrian' },
@@ -119,6 +126,7 @@ function initialsFromName(name: string) {
 }
 
 export default function QueuePage() {
+  const isAdmin = useAuthStore((state) => state.user?.role?.toUpperCase() === 'ADMIN');
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const statusParam = searchParams.get('status');
@@ -148,6 +156,8 @@ export default function QueuePage() {
   const [nextStatus, setNextStatus] = useState('');
   const [statusNote, setStatusNote] = useState('');
   const [statusError, setStatusError] = useState('');
+  const [invoiceError, setInvoiceError] = useState('');
+  const [manualApprovalNote, setManualApprovalNote] = useState('');
 
   const assignMutation = useMutation({
     mutationFn: (input: { ticketId: string; technicianId: string; note?: string }) =>
@@ -175,6 +185,7 @@ export default function QueuePage() {
     queryFn: () => getTicket(detailTicket!.id),
     enabled: Boolean(detailTicket?.id),
     retry: false,
+    refetchInterval: (query) => query.state.data?.quotation?.notification?.status === 'queued' ? 1000 : false,
   });
 
   const { data: invoices = [] } = useQuery({
@@ -202,6 +213,43 @@ export default function QueuePage() {
     },
   });
 
+  const retryQuotationMutation = useMutation({
+    mutationFn: retryTicketQuotation,
+    onSuccess: (_result, _quotationId) => {
+      if (detailTicket) queryClient.setQueryData(['ticket', detailTicket.id], (current: any) => current ? {
+        ...current,
+        quotation: { ...current.quotation, status: 'draft', notification: { status: 'queued', attempt_count: 0 } },
+      } : current);
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+    retry: false,
+  });
+  const manualQuotationMutation = useMutation({
+    mutationFn: (decision: 'approved' | 'rejected') => {
+      if (!detailData?.quotation?.id) throw new Error('Quotation tidak tersedia');
+      return decideTicketQuotationManually(detailData.quotation.id, decision, manualApprovalNote.trim());
+    },
+    onSuccess: () => {
+      setManualApprovalNote('');
+      if (detailTicket) queryClient.invalidateQueries({ queryKey: ['ticket', detailTicket.id] });
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['part-requests'] });
+    },
+    retry: false,
+  });
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: (ticketId: string) => createInvoice(ticketId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      setInvoiceError('');
+    },
+    onError: (error: any) => {
+      setInvoiceError(error?.response?.data?.error || error?.message || 'Gagal membuat invoice. Coba lagi.');
+    },
+  });
+
   const openAssignment = (ticket: ServiceTicket) => {
     setAssigningTicket(ticket);
     setSelectedTechnician('');
@@ -217,8 +265,12 @@ export default function QueuePage() {
   };
 
   const openWhatsApp = (ticket: ServiceTicket) => {
-    const url = buildWhatsAppUrl(ticket.customer_phone ?? '', buildServiceStatusMessage(ticket));
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    try {
+      const url = buildWhatsAppUrl(ticket.customer_phone ?? '', buildServiceStatusMessage(ticket));
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      window.alert(error?.message || 'Pesan WhatsApp tidak dapat dibuat.');
+    }
   };
 
   const openInvoicePrint = (ticket: ServiceTicket) => {
@@ -249,7 +301,7 @@ export default function QueuePage() {
     ? invoices.find((row) => row.ticket_id === detailTicket.id) ?? null
     : null;
   const detailStatus = detailTicket
-    ? DB_STATUS_MAP[detailTicket.current_status] ?? detailTicket.current_status
+    ? DB_STATUS_MAP[detailData?.current_status ?? detailTicket.current_status] ?? detailData?.current_status ?? detailTicket.current_status
     : '';
   const detailTotal = detailInvoice?.total ?? detailTicket?.final_cost ?? null;
 
@@ -266,9 +318,11 @@ export default function QueuePage() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<Status | 'Semua'>(statusFromUrl);
   const [techFilter, setTechFilter] = useState('Semua');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     setStatusFilter(statusFromUrl);
+    setPage(1);
   }, [statusFromUrl]);
 
   const countByStatus = (status: Status) =>
@@ -311,7 +365,7 @@ export default function QueuePage() {
       ticket.tracking_code,
       ticket.customer_name,
       ticket.customer_phone,
-      ticket.device_label
+      getDeviceDisplayName(ticket.device_model)
     );
     const matchStatus = statusFilter === 'Semua' || ticket.uiStatus === statusFilter;
     const matchTech = techFilter === 'Semua' || ticket.technician_name === techFilter;
@@ -319,6 +373,10 @@ export default function QueuePage() {
   });
 
   const totalVisible = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalVisible / ROWS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const visibleRows = rows.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
+  const goToPage = (nextPage: number) => setPage(Math.min(Math.max(nextPage, 1), totalPages));
 
   return (
     <div className="page-enter flex flex-col">
@@ -334,16 +392,6 @@ export default function QueuePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" className="h-auto gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-700" asChild>
-            <a href="#">
-              <DownloadSimple weight="bold" className="size-4 text-stone-600" /> Ekspor antrean (.CSV / PDF)
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" className="h-auto gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-700" asChild>
-            <Link to="/queue/new?mode=scan">
-              <QrCode weight="bold" className="size-4 text-stone-600" /> Scan barcode / QR
-            </Link>
-          </Button>
           <Button size="sm" className="h-auto gap-1.5 px-3.5 py-1.5 text-xs font-semibold" asChild>
             <Link to="/queue/new">
               <Plus weight="bold" className="size-4" /> Check-in Booking
@@ -523,7 +571,7 @@ export default function QueuePage() {
             <Input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => { setQuery(event.target.value); setPage(1); }}
               aria-label="Cari nomor tiket, nomor resi, nama pelanggan, nomor WhatsApp, atau perangkat"
               placeholder="Cari tiket, resi, pelanggan, WhatsApp, atau perangkat."
               className="h-auto w-full rounded-lg border-black/10 bg-white py-1.5 pl-8 pr-3 text-xs text-neutral-900 caret-sky-600 shadow-none placeholder:text-neutral-400 focus-visible:border-sky-500"
@@ -543,12 +591,12 @@ export default function QueuePage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="text-stone-400">Filter status</DropdownMenuLabel>
-                <DropdownMenuItem onSelect={() => setStatusFilter('Semua')}>
+                <DropdownMenuItem onSelect={() => { setStatusFilter('Semua'); setPage(1); }}>
                   <span className="flex-1">Semua ({tickets.length})</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {STATUS_ORDER.map((status) => (
-                  <DropdownMenuItem key={status} onSelect={() => setStatusFilter(status)}>
+                  <DropdownMenuItem key={status} onSelect={() => { setStatusFilter(status); setPage(1); }}>
                     <span className={cn('flex-1', statusFilter === status && 'font-bold text-sky-700')}>
                       {status} ({countByStatus(status)})
                     </span>
@@ -569,12 +617,12 @@ export default function QueuePage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="text-stone-400">Filter teknisi</DropdownMenuLabel>
-                <DropdownMenuItem onSelect={() => setTechFilter('Semua')}>
+                <DropdownMenuItem onSelect={() => { setTechFilter('Semua'); setPage(1); }}>
                   <span className="flex-1">Semua teknisi</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {technicians.map((technician) => (
-                  <DropdownMenuItem key={technician} onSelect={() => setTechFilter(technician)}>
+                  <DropdownMenuItem key={technician} onSelect={() => { setTechFilter(technician); setPage(1); }}>
                     <span className={cn('flex-1', techFilter === technician && 'font-bold text-sky-700')}>
                       {technician}
                     </span>
@@ -622,7 +670,7 @@ export default function QueuePage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((ticket: any, index: number) => (
+                {visibleRows.map((ticket: any, index: number) => (
                   <tr
                     key={ticket.id}
                     className={cn(
@@ -654,7 +702,7 @@ export default function QueuePage() {
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <span className="block text-sm font-semibold leading-5 text-neutral-900">{ticket.device_label ?? '—'}</span>
+                      <span className="block text-sm font-semibold leading-5 text-neutral-900">{getDeviceDisplayName(ticket.device_model)}</span>
                       <span className="mt-0.5 block text-xs font-normal leading-4 tracking-tight text-stone-600">
                         {ticket.complaint}
                       </span>
@@ -789,6 +837,7 @@ export default function QueuePage() {
                           setQuery('');
                           setStatusFilter('Semua');
                           setTechFilter('Semua');
+                          setPage(1);
                         }}
                       >
                         Reset filter
@@ -799,64 +848,15 @@ export default function QueuePage() {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-black/5 px-5 py-3.5 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-3 text-xs leading-4">
-              <span className="text-zinc-600">
-                Menampilkan <span className="font-medium text-zinc-900">{totalVisible ? 1 : 0} - {totalVisible}</span> dari{' '}
-                <span className="font-medium text-zinc-900">{tickets.length}</span> tiket aktif
-              </span>
-              <span className="hidden h-3 w-px bg-black/10 md:block" aria-hidden="true" />
-              <span className="flex items-center gap-1.5">
-                <span className="text-stone-400">Baris:</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 rounded-md border border-black/10 bg-stone-50 px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-                    >
-                      10
-                      <CaretDown weight="bold" className="size-3.5 text-stone-500" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-32">
-                    {[10, 25, 50].map((option) => (
-                      <DropdownMenuItem key={option}>{option} baris</DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="sm" disabled className="h-8 gap-1 text-xs font-medium">
-                <CaretLeft weight="bold" className="size-3.5" /> Sebelumnya
-              </Button>
-              <span className="flex size-8 items-center justify-center rounded-lg bg-sky-600 text-xs font-semibold text-white">
-                1
-              </span>
-              {[2, 3, 5].map((page) => (
-                <button
-                  key={page}
-                  type="button"
-                  disabled
-                  title="Halaman contoh belum dimuat (data mock 8 tiket)"
-                  className="flex size-8 items-center justify-center rounded-lg text-xs font-medium text-zinc-600 disabled:opacity-60"
-                >
-                  {page}
-                </button>
-              ))}
-              <span className="w-6 text-center text-xs font-bold tracking-wider text-stone-400">...</span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled
-                title="Halaman contoh belum dimuat (data mock 8 tiket)"
-                className="h-8 gap-1 text-xs font-medium"
-              >
-                Berikutnya <CaretRight weight="bold" className="size-3.5" />
-              </Button>
-            </div>
-          </div>
+          <DataTablePagination
+            page={currentPage}
+            pageSize={ROWS_PER_PAGE}
+            totalItems={totalVisible}
+            totalPages={totalPages}
+            visibleItems={visibleRows.length}
+            itemLabel="tiket"
+            onPageChange={goToPage}
+          />
         </div>
       </div>
 
@@ -936,9 +936,67 @@ export default function QueuePage() {
 
              <section className="rounded-lg border border-stone-200 p-4">
                <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Perangkat &amp; diagnosa</h3>
-               <p className="mt-3 text-sm font-semibold text-neutral-900">{detailTicket?.device_label ?? '—'}</p>
+                <p className="mt-3 text-sm font-semibold text-neutral-900">{getDeviceDisplayName(detailTicket?.device_model)}</p>
                <p className="mt-1 text-sm leading-6 text-stone-600">{detailTicket?.complaint ?? 'Belum ada keluhan.'}</p>
              </section>
+
+              {detailData?.quotation && (
+                <section className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-amber-900">Quotation · {detailData.quotation.status}</h3>
+                    <span className="text-xs font-bold tabular-nums text-amber-900">Rp {new Intl.NumberFormat('id-ID').format(Number(detailData.quotation.total_amount))}</span>
+                  </div>
+                  {detailData.quotation.technician_diagnosis_snapshot && (
+                    <p className="mt-3 whitespace-pre-wrap rounded-md bg-white p-3 text-xs leading-5 text-stone-700">
+                      <span className="mb-1 block text-[10px] font-bold uppercase text-stone-500">Hasil Pemeriksaan Teknisi</span>
+                      {detailData.quotation.technician_diagnosis_snapshot}
+                    </p>
+                  )}
+                  <ul className="mt-3 divide-y divide-amber-100">
+                    {(detailData.quotation.items ?? []).map((item: any) => (
+                      <li key={item.id} className="py-2 text-xs text-stone-700">
+                        <span className="font-semibold">{item.damage_description || item.description}</span>
+                        <span className="block text-[11px]">{item.part_name ? `${item.part_name}${item.part_is_registered === false ? ' · Part perlu dipesan' : ''} × ${item.qty}` : 'Jasa'} · Rp {new Intl.NumberFormat('id-ID').format(Number(item.subtotal))}</span>
+                        {item.part_specification_snapshot && <span className="block text-[10px] text-stone-500">{item.part_specification_snapshot}</span>}
+                        {item.availability_status && <span className="block text-[10px] font-semibold text-amber-800">{item.availability_status} · tersedia {item.available_qty_snapshot}{item.estimated_part_arrival_days ? ` · estimasi ${item.estimated_part_arrival_days} hari` : ''}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                  {isAdmin && ['draft', 'sent'].includes(detailData.quotation.status) && (
+                    <div className="mt-3 border-t border-amber-200 pt-3">
+                      {detailData.quotation.notification?.status === 'failed' && (
+                        <p role="alert" className="mb-2 rounded-md border border-rose-200 bg-white p-2 text-xs leading-5 text-rose-800">
+                          WhatsApp gagal dikirim: {detailData.quotation.notification.error_message || 'penyedia notifikasi tidak tersedia.'}
+                        </p>
+                      )}
+                      {detailData.quotation.notification?.approval_url && (
+                        <a href={detailData.quotation.notification.approval_url} target="_blank" rel="noreferrer" className="mb-2 inline-flex min-h-9 items-center gap-1.5 text-xs font-semibold text-sky-800 underline underline-offset-2">
+                          <ArrowSquareOut weight="bold" className="size-3.5" /> Buka link approval untuk pengujian
+                        </a>
+                      )}
+                      <Button
+                        variant="outline"
+                        disabled={retryQuotationMutation.isPending || detailData.quotation.notification?.status === 'queued'}
+                        onClick={() => retryQuotationMutation.mutate(detailData.quotation.id)}
+                        className="h-9 w-full text-xs"
+                      >{retryQuotationMutation.isPending || detailData.quotation.notification?.status === 'queued' ? 'Mengirim…' : 'Kirim ulang WhatsApp (buat link baru)'}</Button>
+                      {retryQuotationMutation.isError && <p role="alert" className="mt-2 text-xs text-rose-700">{(retryQuotationMutation.error as any)?.response?.data?.error ?? 'Gagal mengirim ulang quotation.'}</p>}
+                    </div>
+                  )}
+                  {isAdmin && ['draft', 'sent'].includes(detailData.quotation.status) && detailData.quotation.notification?.status !== 'queued' && (
+                    <div className="mt-3 border-t border-amber-200 pt-3">
+                      <label className="text-[11px] font-semibold text-stone-700">Approval manual (catatan wajib)
+                        <textarea value={manualApprovalNote} onChange={(event) => setManualApprovalNote(event.target.value.slice(0, 500))} maxLength={500} rows={2} placeholder="Ringkasan persetujuan via telepon / tatap muka" className="mt-1 w-full rounded-md border border-stone-300 bg-white p-2 text-xs" />
+                      </label>
+                      {manualQuotationMutation.isError && <p role="alert" className="mt-2 text-xs text-rose-700">{(manualQuotationMutation.error as any)?.response?.data?.error ?? 'Gagal menyimpan keputusan manual.'}</p>}
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Button variant="outline" disabled={!manualApprovalNote.trim() || manualQuotationMutation.isPending} onClick={() => manualQuotationMutation.mutate('rejected')} className="h-8 text-[11px] text-rose-700">Tolak manual</Button>
+                        <Button disabled={!manualApprovalNote.trim() || manualQuotationMutation.isPending} onClick={() => manualQuotationMutation.mutate('approved')} className="h-8 text-[11px]">Setujui manual</Button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
 
              <section className="rounded-lg border border-stone-200 p-4">
                <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Biaya</h3>
@@ -1049,6 +1107,18 @@ export default function QueuePage() {
                     ? `${detailInvoice.invoice_no} · ${detailInvoice.status}`
                     : 'Invoice belum dibuat'}
                 </span>
+                {!detailInvoice && detailTicket && ['selesai', 'siap_diambil'].includes(detailTicket.current_status) && (
+                  <Button
+                    onClick={() => createInvoiceMutation.mutate(detailTicket.id)}
+                    disabled={createInvoiceMutation.isPending}
+                    variant="outline"
+                    className="mt-3 h-9 w-full gap-2 text-xs font-bold text-stone-700"
+                  >
+                    <Receipt weight="bold" className="size-4" />
+                    {createInvoiceMutation.isPending ? 'Membuat invoice...' : 'Buat invoice dari biaya final'}
+                  </Button>
+                )}
+                {invoiceError && <p role="alert" className="mt-2 text-xs text-rose-700">{invoiceError}</p>}
               </section>
             </div>
           </div>
@@ -1198,7 +1268,7 @@ export default function QueuePage() {
                 <option value="">Pilih teknisi</option>
                 {assignmentOptions.map((technician) => (
                   <option key={technician.id} value={technician.id}>
-                    {technician.name} · {technician.active_count} tiket aktif
+                    {technician.name} · {technician.phone || 'No handphone belum diatur'} · {technician.active_count} tiket aktif
                   </option>
                 ))}
               </select>

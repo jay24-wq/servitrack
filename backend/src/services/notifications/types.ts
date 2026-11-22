@@ -3,13 +3,14 @@ export interface NotificationProviderResult {
 }
 
 export interface NotificationProvider {
-  sendTextMessage(toPhone: string, text: string): Promise<NotificationProviderResult>;
+  sendTextMessage(tenantId: string, toPhone: string, text: string): Promise<NotificationProviderResult>;
   sendTemplateMessage(
+    tenantId: string,
     toPhone: string,
     templateName: string,
-    variables: Record<string, string | number>
+    variables: Record<string, unknown>
   ): Promise<NotificationProviderResult>;
-  healthCheck(): Promise<boolean>;
+  healthCheck(tenantId: string): Promise<boolean>;
 }
 
 export interface WhatsAppNotificationInput {
@@ -17,7 +18,9 @@ export interface WhatsAppNotificationInput {
   customerId: string;
   toPhone: string;
   templateName: string;
-  variables: Record<string, string | number>;
+  variables: Record<string, unknown>;
+  dedupeKey?: string | null;
   ticketId?: string | null;
   quotationId?: string | null;
+  approvalUrl?: string;
 }

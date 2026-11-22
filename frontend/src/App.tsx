@@ -1,15 +1,18 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import HomePage from './pages/public/HomePage';
+import AboutPage from './pages/public/AboutPage';
+import FaqPage from './pages/public/FaqPage';
 import ServicesPage from './pages/public/ServicesPage';
 import CapacityPage from './pages/public/CapacityPage';
 import TrackingPage from './pages/public/TrackingPage';
+import QuotationApprovalPage from './pages/public/QuotationApprovalPage';
 import LoginPage from './pages/admin/LoginPage';
+import RegisterPage from './pages/public/RegisterPage';
 import DashboardPage from './pages/admin/DashboardPage';
 import TechnicianDashboardPage from './pages/technician/TechnicianDashboardPage';
 import TechnicianKanbanPage from './pages/technician/TechnicianKanbanPage';
 import TechnicianInventoryPage from './pages/technician/TechnicianInventoryPage';
-import TechnicianQuotationPage from './pages/technician/TechnicianQuotationPage';
 import TechnicianHistoryPage from './pages/technician/TechnicianHistoryPage';
 import FrontdeskDashboardPage from './pages/frontdesk/FrontdeskDashboardPage';
 import QueuePage from './pages/admin/QueuePage';
@@ -19,10 +22,20 @@ import StaffPage from './pages/admin/StaffPage';
 import PaymentsPage from './pages/admin/PaymentsPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import BookingCalendarPage from './pages/admin/BookingCalendarPage';
+import SettingsPage from './pages/admin/SettingsPage';
+import AccountSettingsPage from './pages/admin/AccountSettingsPage';
+import CustomizationSettingsPage from './pages/admin/CustomizationSettingsPage';
+import NotificationSettingsPage from './pages/admin/NotificationSettingsPage';
+import WhatsAppSettingsPage from './pages/admin/WhatsAppSettingsPage';
+import CustomizationProfilePage from './pages/admin/CustomizationProfilePage';
+import OperationalSettingsPage from './pages/admin/OperationalSettingsPage';
+import PaymentSettingsPage from './pages/admin/PaymentSettingsPage';
+import PublicTrackingSettingsPage from './pages/admin/PublicTrackingSettingsPage';
 import DashboardLayout from './components/admin/DashboardLayout';
 import RequireRole from './components/auth/RequireRole';
 import BookingPage from './pages/public/BookingPage';
 import CourierPage from './pages/courier/CourierPage';
+import CourierTaskDetailPage from './pages/courier/CourierTaskDetailPage';
 import { useBookingStore } from './store';
 
 function ResetBookingDateOnExit() {
@@ -48,11 +61,16 @@ function App() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<HomePage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/faq" element={<FaqPage />} />
         <Route path="/layanan" element={<ServicesPage />} />
         <Route path="/kapasitas" element={<CapacityPage />} />
         <Route path="/tracking" element={<TrackingPage />} />
+        <Route path="/quotation/approve/:token" element={<QuotationApprovalPage />} />
         <Route path="/booking" element={<BookingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/staff/login" element={<LoginPage portal="staff" />} />
+        <Route path="/register" element={<RegisterPage />} />
 
         {/* Admin / Staff area — ADMIN only */}
         <Route
@@ -88,7 +106,7 @@ function App() {
         <Route
           path="/inventory"
           element={
-            <RequireRole allow={['ADMIN']}>
+            <RequireRole allow={['ADMIN', 'TEKNISI', 'FRONTDESK', 'KURIR']}>
               <DashboardLayout>
                 <InventoryPage />
               </DashboardLayout>
@@ -135,6 +153,36 @@ function App() {
             </RequireRole>
           }
         />
+        <Route
+          path="/settings/account"
+          element={
+            <RequireRole allow={['ADMIN', 'FRONTDESK', 'TEKNISI', 'KURIR']}>
+              <DashboardLayout>
+                <AccountSettingsPage />
+              </DashboardLayout>
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <RequireRole allow={['ADMIN']}>
+              <DashboardLayout><Outlet /></DashboardLayout>
+            </RequireRole>
+          }
+        >
+          <Route index element={<SettingsPage />} />
+          <Route path="appearance" element={<SettingsPage section="appearance" />} />
+          <Route path="customization" element={<CustomizationSettingsPage />} />
+          <Route path="customization/profile" element={<CustomizationProfilePage />} />
+          <Route path="customization/operasional" element={<OperationalSettingsPage />} />
+          <Route path="guide" element={<SettingsPage section="guide" />} />
+          <Route path="notifications" element={<NotificationSettingsPage />} />
+          <Route path="whatsapp" element={<WhatsAppSettingsPage />} />
+          <Route path="payments" element={<PaymentSettingsPage />} />
+          <Route path="public-tracking" element={<PublicTrackingSettingsPage />} />
+          <Route path="*" element={<Navigate to="/settings" replace />} />
+        </Route>
 
         {/* Technician area — TEKNISI only */}
         <Route
@@ -167,16 +215,7 @@ function App() {
             </RequireRole>
           }
         />
-        <Route
-          path="/technician/quotation"
-          element={
-            <RequireRole allow={['TEKNISI']}>
-              <DashboardLayout>
-                <TechnicianQuotationPage />
-              </DashboardLayout>
-            </RequireRole>
-          }
-        />
+        <Route path="/technician/quotation" element={<Navigate to="/technician/kanban" replace />} />
         <Route
           path="/technician/history"
           element={
@@ -201,6 +240,7 @@ function App() {
         />
 
         <Route path="/courier" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierPage /></DashboardLayout></RequireRole>} />
+        <Route path="/courier/tasks/:id" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierTaskDetailPage /></DashboardLayout></RequireRole>} />
         <Route path="/courier/tasks" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierPage filter="tasks" /></DashboardLayout></RequireRole>} />
         <Route path="/courier/history" element={<RequireRole allow={['KURIR']}><DashboardLayout><CourierPage filter="history" /></DashboardLayout></RequireRole>} />
 

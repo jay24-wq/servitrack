@@ -1,8 +1,12 @@
 // @ts-nocheck
 import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { addInventoryStock, createPart, getInventoryParts, deletePart, updatePart } from "../../lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from 'react-router-dom';
+import { addInventoryStock, cancelPartRequest, createPart, deletePart, getPartRequests, orderPartRequest, receivePartRequest, updatePart } from "../../lib/api";
+import { useInventoryParts } from "../../hooks/useInventoryParts";
+import { inventoryStockStatus, toIntegerPrice } from "../../lib/inventory-parts";
 import { Button } from "../../components/ui/button";
+import DataTablePagination from "../../components/ui/data-table-pagination";
 import { Input } from '../../components/ui/input';
 import {
   DropdownMenu,
@@ -13,11 +17,13 @@ import {
 } from '../../components/ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 import { useAuthStore } from "../../store";
+import { useBranchStore } from "../../store/branchStore";
 import TambahStokModal from "./TambahStokModal";
 import MutasiModal from "./MutasiModal";
 import EditPartModal from "./EditPartModal";
 import StockInModal from "./StockInModal";
-import { ArrowClockwise, ArrowRight, CaretDown, CaretLeft, CaretRight, ClockCounterClockwise, DownloadSimple, MagnifyingGlass, Package, PencilSimple, Plus, Trash, Wallet, WarningCircle, Wrench } from "@phosphor-icons/react";
+import { RupiahInput } from "../../components/ui/rupiah-input";
+import { ArrowClockwise, ArrowRight, CaretDown, ClockCounterClockwise, DownloadSimple, MagnifyingGlass, Package, PencilSimple, Plus, Trash, Wallet, WarningCircle, Wrench } from "@phosphor-icons/react";
 
 const CATEGORY_STYLE = {
   LCD: "bg-blue-50 text-blue-700 outline-blue-200/60",
@@ -38,8 +44,6 @@ const icons = {
   wallet: Wallet,
   search: MagnifyingGlass,
   chevronDown: CaretDown,
-  chevronLeft: CaretLeft,
-  chevronRight: CaretRight,
   reset: ArrowClockwise,
   edit: PencilSimple,
   trash: Trash,
@@ -102,12 +106,72 @@ const INVENTORY_STATUS_OPTIONS = [
 export default function InventoryPage() {
   const queryClient = useQueryClient();
   const role = useAuthStore((state) => state.user?.role);
+  const tenantId = useAuthStore((state) => state.user?.tenant_id);
+  const branchId = useBranchStore((state) => state.currentBranch?.id);
+  const canManagePartRequests = String(role ?? '').toUpperCase() === 'ADMIN';
   const [inventoryStatus, setInventoryStatus] = useState("active");
-  const { data: partsRaw = [] } = useQuery({ queryKey: ["inventory-parts", inventoryStatus], queryFn: () => getInventoryParts(inventoryStatus) });
+  const { data: partsRaw = [] } = useInventoryParts(inventoryStatus);
+  const { data: activePartRows = [] } = useInventoryParts('active');
   const [showStockModal, setShowStockModal] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [editPart, setEditPart] = useState<any>(null);
   const [stockInPart, setStockInPart] = useState<any>(null);
+  const [requestStatus, setRequestStatus] = useState('active');
+  const [receivingRequest, setReceivingRequest] = useState<any>(null);
+  const [receivePartId, setReceivePartId] = useState('');
+  const [receiveQty, setReceiveQty] = useState('');
+  const [receivePrice, setReceivePrice] = useState('');
+  const [newPartRequest, setNewPartRequest] = useState<any>(null);
+  const [requestActionMessage, setRequestActionMessage] = useState('');
+  const [requestActionError, setRequestActionError] = useState('');
+  const { data: requestsResponse, isLoading: requestsLoading, isError: requestsError } = useQuery({
+    queryKey: ['part-requests', tenantId, branchId, requestStatus],
+    queryFn: () => getPartRequests(requestStatus),
+  });
+  const partRequests = requestsResponse?.data ?? [];
+  const requestSummary = requestsResponse?.summary ?? { OPEN: 0, ORDERED: 0, RECEIVED: 0, PENDING_APPROVAL: 0 };
+  const activeParts = (activePartRows as any[]).map((part) => ({ id: part.id, sku: part.sku, name: part.name, stock: Number(part.stock_qty ?? 0), cost: Number(part.cost_price ?? 0) }));
+  const partRequestQueryKey = ['part-requests', tenantId, branchId];
+  const invalidatePartRequestViews = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: partRequestQueryKey }),
+    queryClient.invalidateQueries({ queryKey: ['inventory-parts'] }),
+    queryClient.invalidateQueries({ queryKey: ['inventory-movements'] }),
+    queryClient.invalidateQueries({ queryKey: ['technician-dashboard'] }),
+    queryClient.invalidateQueries({ queryKey: ['tickets'] }),
+  ]);
+  const orderPartMutation = useMutation({
+    mutationFn: (input: { id: string; days?: number }) => orderPartRequest(input.id, input.days),
+    onSuccess: async (_data, input) => { setRequestActionError(''); setRequestActionMessage(input.days ? 'Status ORDERED dan estimasi kedatangan diperbarui.' : 'Permintaan part ditandai ORDERED.'); await invalidatePartRequestViews(); },
+    onError: (error: any) => setRequestActionError(error?.response?.data?.error ?? 'Gagal memperbarui status permintaan part.'),
+    retry: false,
+  });
+  const cancelPartMutation = useMutation({
+    mutationFn: (input: { id: string; reason: string }) => cancelPartRequest(input.id, input.reason),
+    onSuccess: async () => { setRequestActionError(''); setRequestActionMessage('Permintaan part dibatalkan.'); await invalidatePartRequestViews(); },
+    onError: (error: any) => setRequestActionError(error?.response?.data?.error ?? 'Gagal membatalkan permintaan part.'),
+    retry: false,
+  });
+  const receivePartMutation = useMutation({
+    mutationFn: () => receivePartRequest(receivingRequest.id, {
+      linked_part_id: receivePartId,
+      qty_received: Number(receiveQty),
+      actual_price: receivePrice === '' ? undefined : Number(receivePrice),
+    }),
+    onSuccess: async (result: any) => {
+      setRequestActionError('');
+      const difference = Number(result.price_difference ?? 0);
+      setRequestActionMessage(difference === 0
+        ? `Part diterima dan ditautkan ke ${result.part?.name ?? 'inventory'}.`
+        : `Part diterima. Selisih harga aktual dari estimasi quotation: ${difference > 0 ? '+' : ''}${rupiah(difference)} per unit.`);
+      setReceivingRequest(null);
+      setReceivePartId('');
+      setReceiveQty('');
+      setReceivePrice('');
+      await invalidatePartRequestViews();
+    },
+    onError: (error: any) => setRequestActionError(error?.response?.data?.error ?? 'Gagal menerima permintaan part.'),
+    retry: false,
+  });
 
   const parts = (partsRaw as any[]).map((p) => ({
     id: p.id,
@@ -127,7 +191,7 @@ export default function InventoryPage() {
   const stats = useMemo(() => ({
     totalSku: parts.length,
     totalUnit: parts.reduce((s, p) => s + p.stok, 0),
-    lowStock: parts.filter((p) => p.stok <= p.min).length,
+    lowStock: parts.filter((p) => inventoryStockStatus(p.stok, p.min) !== 'Aman').length,
     usedThisMonth: 0,
     usedGrowth: "+0% vs lalu",
     installedValue: rupiah(0),
@@ -147,7 +211,7 @@ export default function InventoryPage() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = parts.filter((p) => {
-      const isLow = p.stok <= p.min;
+      const isLow = inventoryStockStatus(p.stok, p.min) !== 'Aman';
        return (!q || p.nama.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)) && (category === "all" || p.kategori === category) && (status === "all" || (status === "low" ? isLow : !isLow));
     });
     const sorters = { "stok-asc": (a, b) => a.stok - b.stok, "stok-desc": (a, b) => b.stok - a.stok, nama: (a, b) => a.nama.localeCompare(b.nama), "harga-desc": (a, b) => b.harga - a.harga };
@@ -160,16 +224,54 @@ export default function InventoryPage() {
   const totalItems = rows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / Number(rowsPerPage)));
   const goTo = (p) => setPage(Math.min(Math.max(1, p), totalPages));
-  const pageNumbers = totalPages <= 5 ? Array.from({ length: totalPages }, (_, i) => i + 1) : [1, 2, 3, "gap", totalPages];
   const visibleRows = rows.slice((page - 1) * Number(rowsPerPage), page * Number(rowsPerPage));
 
   const exportCsv = () => {
     const headers = ["SKU", "Nama Part", "Kategori", "Stock Saat Ini", "Minimum Stock", "Harga Beli", "Harga Jual", "Status Stock"];
     const csvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const body = rows.map((p) => [p.sku, p.nama, p.kategori, p.stok, p.min, p.cost, p.harga, p.stok <= p.min ? "Stok Menipis" : "Stok Aman"].map(csvValue).join(","));
+    const body = rows.map((p) => [p.sku, p.nama, p.kategori, p.stok, p.min, p.cost, p.harga, `Stok ${inventoryStockStatus(p.stok, p.min)}`].map(csvValue).join(","));
     const blob = new Blob([`${headers.map(csvValue).join(",")}\n${body.join("\n")}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a");
     link.href = url; link.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
+  };
+
+  const markPartOrdered = (request) => {
+    const entered = window.prompt('Estimasi kedatangan terbaru (hari)', String(request.estimated_arrival_days));
+    if (entered === null) return;
+    const days = Number(entered);
+    if (!Number.isSafeInteger(days) || days <= 0) return window.alert('Estimasi kedatangan harus bilangan bulat lebih dari 0.');
+    orderPartMutation.mutate({ id: request.id, days });
+  };
+
+  const cancelPart = (request) => {
+    const reason = window.prompt(`Alasan membatalkan permintaan ${request.requested_name}?`);
+    if (reason === null) return;
+    if (!reason.trim()) return window.alert('Alasan pembatalan wajib diisi.');
+    cancelPartMutation.mutate({ id: request.id, reason: reason.trim() });
+  };
+
+  const startReceivePart = (request) => {
+    setReceivingRequest(request);
+    setReceivePartId('');
+    setReceiveQty(String(request.qty));
+    setReceivePrice(String(toIntegerPrice(request.estimated_price)));
+  };
+
+  const createPartFromRequest = async (payload: any) => {
+    if (!newPartRequest) return;
+    const part = await createPart({
+      ...payload,
+      part_request_id: newPartRequest.id,
+      stock_qty: 0,
+    });
+    setRequestActionError('');
+    setRequestActionMessage(`Part baru ${part.name} terdaftar dengan stok 0. Tautkan & restock saat part diterima.`);
+    setReceivingRequest(newPartRequest);
+    setReceivePartId(part.id);
+    setReceiveQty(String(newPartRequest.qty));
+    setReceivePrice(String(payload.cost_price));
+    setNewPartRequest(null);
+    await invalidatePartRequestViews();
   };
 
   return (
@@ -306,7 +408,8 @@ export default function InventoryPage() {
             <tbody>
               {rows.length === 0 && (<tr><td colSpan={8} className="px-4 py-12 text-center text-xs text-neutral-500">Tidak ada suku cadang yang cocok.</td></tr>)}
                {visibleRows.map((p) => {
-                const isLow = p.stok <= p.min;
+                const stockStatus = inventoryStockStatus(p.stok, p.min);
+                const isLow = stockStatus !== 'Aman';
                 return (
                   <tr key={p.id} className={`border-b border-black/5 align-top transition-colors last:border-b-0 hover:bg-sky-50/40 ${isLow ? "bg-rose-50/20" : ""}`}>
                      <td className="px-4 py-3.5 align-middle font-mono text-xs font-medium leading-4 text-neutral-500">{p.sku}</td>
@@ -315,7 +418,7 @@ export default function InventoryPage() {
                       <p className="text-xs leading-4 text-neutral-500">{p.deskripsi}</p>
                     </td>
                     <td className="px-4 py-3.5 align-middle"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium leading-4 outline outline-1 -outline-offset-1 ${CATEGORY_STYLE[p.kategori] ?? "bg-zinc-100 text-stone-700 outline-black/5"}`}>{p.kategori}</span></td>
-                    <td className="px-4 py-3.5 text-center align-middle">{isLow ? <span className="inline-flex rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold leading-4 text-rose-700 outline outline-1 -outline-offset-1 outline-rose-200">Stok Menipis : {p.stok} {p.satuan}</span> : <span className="text-xs leading-4"><span className="font-bold text-zinc-900">{p.stok}</span> <span className="text-neutral-500">{p.satuan}</span></span>}</td>
+                    <td className="px-4 py-3.5 text-center align-middle">{isLow ? <span className="inline-flex rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold leading-4 text-rose-700 outline outline-1 -outline-offset-1 outline-rose-200">Stok {stockStatus} : {p.stok} {p.satuan}</span> : <span className="text-xs leading-4"><span className="font-bold text-zinc-900">{p.stok}</span> <span className="text-neutral-500">{p.satuan}</span></span>}</td>
                     <td className="px-4 py-3.5 text-center align-middle text-xs font-medium leading-4 text-neutral-500">{p.min} {p.satuan}</td>
                     <td className="px-4 py-3.5 text-right align-middle text-xs font-medium leading-4 text-zinc-900">{rupiah(p.harga)}</td>
                     <td className="px-4 py-3.5 text-center align-middle"><span className="inline-block rounded-sm bg-zinc-100 px-1.5 font-mono text-xs leading-4 text-stone-700 outline outline-1 -outline-offset-1 outline-black/5">{p.bin}</span></td>
@@ -326,20 +429,105 @@ export default function InventoryPage() {
             </tbody>
           </table>
         </div>
-        <div className="flex flex-col gap-3 border-t border-black/5 px-5 py-3.5 md:flex-row md:items-center md:justify-between">
-           <span className="text-xs leading-4 text-zinc-600">Menampilkan <span className="font-medium text-zinc-900">{visibleRows.length ? `${(page - 1) * Number(rowsPerPage) + 1} - ${(page - 1) * Number(rowsPerPage) + visibleRows.length}` : "0"}</span> dari <span className="font-medium text-zinc-900">{totalItems}</span> suku cadang</span>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs font-medium" disabled={page === 1} onClick={() => goTo(page - 1)}><Ico name="chevronLeft" />Sebelumnya</Button>
-            {pageNumbers.map((n, idx) => n === "gap" ? <span key={`gap-${idx}`} className="w-6 text-center text-xs font-bold tracking-wider text-stone-400">...</span> : <button key={n} type="button" onClick={() => goTo(n)} className={`flex size-8 items-center justify-center rounded-lg text-xs leading-4 transition-colors ${page === n ? "bg-sky-600 font-semibold text-white" : "font-medium text-zinc-600 hover:bg-stone-100"}`}>{n}</button>)}
-            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs font-medium" disabled={page === totalPages} onClick={() => goTo(page + 1)}>Berikutnya<Ico name="chevronRight" /></Button>
-          </div>
-        </div>
+        <DataTablePagination
+          page={page}
+          pageSize={Number(rowsPerPage)}
+          totalItems={totalItems}
+          totalPages={totalPages}
+          visibleItems={visibleRows.length}
+          itemLabel="suku cadang"
+          onPageChange={goTo}
+        />
       </div>
+      <section className={CARD}>
+        <div className="flex flex-col gap-3 border-b border-black/5 pb-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-base font-bold text-zinc-900">Permintaan Part (Perlu Dibeli)</h2>
+            <p className="mt-1 text-xs text-stone-600">Part custom hanya masuk daftar setelah pelanggan menyetujui quotation.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {(['OPEN', 'ORDERED', 'RECEIVED'] as const).map((statusKey) => (
+                <span key={statusKey} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
+                  {statusKey} <b className="ml-1 tabular-nums">{requestSummary[statusKey] ?? 0}</b>
+                </span>
+              ))}
+              <span className="text-[11px] text-stone-500">{requestSummary.PENDING_APPROVAL ?? 0} menunggu persetujuan pelanggan</span>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-stone-600">
+            Filter status
+            <select value={requestStatus} onChange={(event) => setRequestStatus(event.target.value)} className="h-9 rounded-lg border border-black/10 bg-white px-2.5 text-xs text-zinc-900">
+              <option value="active">OPEN + ORDERED</option>
+              <option value="OPEN">OPEN</option>
+              <option value="ORDERED">ORDERED</option>
+              <option value="RECEIVED">RECEIVED</option>
+              <option value="CANCELLED">CANCELLED</option>
+              <option value="all">Semua status</option>
+            </select>
+          </label>
+        </div>
+        {requestActionMessage && <p role="status" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{requestActionMessage}</p>}
+        {requestActionError && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{requestActionError}</p>}
+        {requestsError && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">Gagal memuat permintaan part.</p>}
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[1120px] text-left text-xs">
+            <thead>
+              <tr className="border-y border-black/10 bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+                <th className="px-3 py-3">Nama part</th><th className="px-3 py-3">Spesifikasi</th><th className="px-3 py-3 text-center">Qty</th>
+                <th className="px-3 py-3 text-right">Estimasi harga</th><th className="px-3 py-3">Tiket</th><th className="px-3 py-3">Teknisi</th>
+                <th className="px-3 py-3">Tanggal diminta</th><th className="px-3 py-3">Estimasi kedatangan</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requestsLoading ? (
+                <tr><td colSpan={10} className="px-3 py-10 text-center text-stone-500">Memuat permintaan part…</td></tr>
+              ) : partRequests.length === 0 ? (
+                <tr><td colSpan={10} className="px-3 py-10 text-center text-stone-500">{requestStatus === 'active' ? 'Tidak ada part yang perlu dibeli.' : 'Tidak ada permintaan part untuk filter ini.'}</td></tr>
+              ) : partRequests.map((request: any) => (
+                <tr key={request.id} className="border-b border-black/5 align-top last:border-0">
+                  <td className="px-3 py-3 font-semibold text-zinc-900">{request.requested_name}{request.linked_part_name && <span className="mt-1 block text-[10px] font-normal text-emerald-700">Tertaut: {request.linked_part_name} · {request.linked_part_sku}</span>}</td>
+                  <td className="px-3 py-3 text-stone-600">{request.specification || '—'}</td>
+                  <td className="px-3 py-3 text-center font-semibold tabular-nums">{request.qty}</td>
+                  <td className="px-3 py-3 text-right tabular-nums">{rupiah(Number(request.estimated_price))}{request.actual_price != null && Number(request.price_difference) !== 0 && <span className={`mt-1 block text-[10px] font-semibold ${Number(request.price_difference) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>Aktual {rupiah(Number(request.actual_price))} ({Number(request.price_difference) > 0 ? '+' : ''}{rupiah(Number(request.price_difference))}/unit)</span>}</td>
+                  <td className="px-3 py-3"><Link to={`/tracking?resi=${encodeURIComponent(request.tracking_code ?? request.ticket_code)}`} className="font-mono font-semibold text-sky-700 hover:underline">{request.ticket_code}</Link></td>
+                  <td className="px-3 py-3 text-stone-700">{request.technician_name}</td>
+                  <td className="px-3 py-3 text-stone-600">{new Date(request.requested_at).toLocaleDateString('id-ID')}</td>
+                  <td className="px-3 py-3 text-stone-700">{request.estimated_arrival_days} hari</td>
+                  <td className="px-3 py-3"><span className={cn('rounded-full px-2 py-1 text-[10px] font-bold', request.status === 'OPEN' ? 'bg-amber-100 text-amber-800' : request.status === 'ORDERED' ? 'bg-sky-100 text-sky-800' : request.status === 'RECEIVED' ? 'bg-emerald-100 text-emerald-800' : request.status === 'CANCELLED' ? 'bg-stone-200 text-stone-600' : 'bg-violet-100 text-violet-800')}>{request.status}</span>{request.cancelled_reason && <span className="mt-1 block max-w-36 text-[10px] text-stone-500">{request.cancelled_reason}</span>}</td>
+                  <td className="px-3 py-3">
+                    {!canManagePartRequests ? <span className="text-stone-400">Lihat saja</span> : (
+                      <div className="flex min-w-48 flex-col gap-1.5">
+                        {request.status === 'OPEN' && <Button size="sm" variant="outline" onClick={() => markPartOrdered(request)} disabled={orderPartMutation.isPending} className="h-8 text-[10px]">Tandai dipesan</Button>}
+                        {request.status === 'ORDERED' && <Button size="sm" variant="outline" onClick={() => markPartOrdered(request)} disabled={orderPartMutation.isPending} className="h-8 text-[10px]">Perbarui estimasi</Button>}
+                        {['OPEN', 'ORDERED'].includes(request.status) && (
+                          receivingRequest?.id === request.id ? (
+                            <div className="flex flex-col gap-1.5 rounded-md border border-stone-200 bg-stone-50 p-2">
+                              <select value={receivePartId} onChange={(event) => setReceivePartId(event.target.value)} className="h-8 rounded border border-stone-300 bg-white px-2 text-[10px]">
+                                <option value="">Pilih part inventory…</option>
+                                {activeParts.map((part) => <option key={part.id} value={part.id}>{part.name} · {part.sku} · stok {part.stock}</option>)}
+                              </select>
+                              <input type="number" min={Number(request.qty)} step={1} value={receiveQty} onChange={(event) => setReceiveQty(event.target.value)} placeholder="Qty diterima" className="h-8 rounded border border-stone-300 bg-white px-2 text-[10px]" />
+                              <RupiahInput id={`receive-price-${request.id}`} value={receivePrice} onChange={setReceivePrice} ariaLabel="Harga aktual per unit" placeholder="Harga aktual / unit" className="h-8 w-full rounded border border-stone-300 bg-white pl-8 pr-2 text-[10px] tabular-nums" />
+                              <Button size="sm" onClick={() => receivePartMutation.mutate()} disabled={!receivePartId || Number(receiveQty) < Number(request.qty) || receivePartMutation.isPending} className="h-8 text-[10px]">{receivePartMutation.isPending ? 'Menerima…' : 'Tautkan & restock'}</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setReceivingRequest(null)} className="h-7 text-[10px]">Batal</Button>
+                            </div>
+                          ) : <Button size="sm" variant="outline" onClick={() => startReceivePart(request)} className="h-8 text-[10px]">Tautkan part diterima</Button>
+                        )}
+                        {request.status === 'ORDERED' && <Button size="sm" variant="outline" onClick={() => setNewPartRequest(request)} className="h-8 text-[10px]">Tambah Part Baru</Button>}
+                        {!['CANCELLED', 'RECEIVED'].includes(request.status) && <Button size="sm" variant="ghost" onClick={() => cancelPart(request)} disabled={cancelPartMutation.isPending} className="h-7 text-[10px] text-rose-700">Batalkan request</Button>}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       {showStockModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><TambahStokModal onClose={() => setShowStockModal(false)} onSubmit={async (payload) => { await createPart(payload); setShowStockModal(false); queryClient.invalidateQueries({ queryKey: ["inventory-parts"] }); }} /></div>}
       {editPart && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><EditPartModal part={editPart} onClose={() => setEditPart(null)} onSubmit={async (payload) => { await updatePart(editPart.id, payload); setEditPart(null); queryClient.invalidateQueries({ queryKey: ["inventory-parts"] }); queryClient.invalidateQueries({ queryKey: ["inventory-parts", inventoryStatus] }); }} /></div>}
       {stockInPart && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><StockInModal part={stockInPart} onClose={() => setStockInPart(null)} onSubmit={async (payload) => { await addInventoryStock(payload); setStockInPart(null); queryClient.invalidateQueries({ queryKey: ["inventory-parts"] }); queryClient.invalidateQueries({ queryKey: ["inventory-parts", inventoryStatus] }); queryClient.invalidateQueries({ queryKey: ["inventory-movements"] }); }} /></div>}
+      {newPartRequest && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><TambahStokModal partRequestId={newPartRequest.id} initialValues={{ name: newPartRequest.requested_name, spec: newPartRequest.specification ?? '', cost_price: String(toIntegerPrice(newPartRequest.estimated_price)), sell_price: '' }} onClose={() => setNewPartRequest(null)} onSubmit={createPartFromRequest} /></div>}
       {showMovementModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><MutasiModal onClose={() => setShowMovementModal(false)} /></div>}
     </div>
   );
 }
-

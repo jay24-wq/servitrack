@@ -9,13 +9,16 @@ interface UserAvatarProps extends Omit<React.ComponentProps<typeof Avatar>, 'chi
   initials: string;
   alt?: string;
   backgroundColor?: string;
+  imageSrc?: string | null;
 }
 
-function UserAvatar({ seed, initials, alt, backgroundColor, className, ...props }: UserAvatarProps) {
+function UserAvatar({ seed, initials, alt, backgroundColor, imageSrc, className, ...props }: UserAvatarProps) {
+  const src = imageSrc || dicebearAvatar(seed, { backgroundColor });
+
   return (
     <Avatar className={cn('overflow-hidden', className)} {...props}>
-      <AvatarImage src={dicebearAvatar(seed, { backgroundColor })} alt={alt ?? seed} loading="lazy" />
-      <AvatarFallback className="uppercase">{initials}</AvatarFallback>
+      <AvatarImage src={src} alt={alt ?? seed} loading="lazy" />
+      {!imageSrc && <AvatarFallback className="uppercase">{initials}</AvatarFallback>}
     </Avatar>
   );
 }

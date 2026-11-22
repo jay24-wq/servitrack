@@ -60,7 +60,6 @@ describe('Financial and Inventory Module Tests', () => {
         tenant_id: tenantId,
         customer_id: customerId,
         category: 'Laptop',
-        brand: 'Lenovo',
         model: 'ThinkPad',
       }).returning('id');
       deviceId = d.id;
@@ -240,36 +239,18 @@ describe('Financial and Inventory Module Tests', () => {
     ).rejects.toThrow('Tiket sudah memiliki invoice');
   });
 
-  it('should update invoice status to partial then paid and reject duplicate gateway_ref', async () => {
+  it('requires a full invoice payment and rejects duplicate settlement references', async () => {
     const invoice = await db.transaction(async (trx) => {
       await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
       return trx('invoices').where({ ticket_id: ticketId }).first();
     });
 
-    // Bayar sebagian (partial)
-    await db.transaction(async (trx) => {
+    await expect(db.transaction(async (trx) => {
       await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
-      await trx('payments').insert({
-        tenant_id: tenantId,
-        invoice_id: invoice.id,
-        received_by: userId,
-        method: 'qris',
-        amount: 300000,
-        status: 'paid',
-        paid_at: new Date(),
-      });
-
-      await trx('invoices').where({ id: invoice.id }).update({ status: 'partial' });
-    });
-
-    let invCheck = await db.transaction(async (trx) => {
-      await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
-      return trx('invoices').where({ id: invoice.id }).first();
-    });
-    expect(invCheck.status).toBe('partial');
+      await trx('payments').insert({ tenant_id: tenantId, invoice_id: invoice.id, received_by: userId, method: 'qris', amount: 300000, status: 'paid', is_full_settlement: true });
+    })).rejects.toThrow('Pembayaran harus sama dengan total invoice');
 
     const ref = 'REF-' + Date.now().toString().slice(-8);
-    // Bayar sisa (paid) + uji gateway_ref unik
     await db.transaction(async (trx) => {
       await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
       await trx('payments').insert({
@@ -277,22 +258,23 @@ describe('Financial and Inventory Module Tests', () => {
         invoice_id: invoice.id,
         received_by: userId,
         method: 'qris',
-        amount: 450000,
+        amount: Number(invoice.total),
         status: 'paid',
         gateway_ref: ref,
+        idempotency_key: `test-${Date.now()}`,
+        is_full_settlement: true,
         paid_at: new Date(),
       });
 
       await trx('invoices').where({ id: invoice.id }).update({ status: 'paid' });
     });
 
-    invCheck = await db.transaction(async (trx) => {
+    const invCheck = await db.transaction(async (trx) => {
       await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
       return trx('invoices').where({ id: invoice.id }).first();
     });
     expect(invCheck.status).toBe('paid');
 
-    // Duplicate gateway_ref test
     await expect(
       db.transaction(async (trx) => {
         await trx.raw("SELECT set_config('app.tenant_id', ?, true)", [tenantId]);
@@ -301,9 +283,11 @@ describe('Financial and Inventory Module Tests', () => {
           invoice_id: invoice.id,
           received_by: userId,
           method: 'qris',
-          amount: 50000,
+          amount: Number(invoice.total),
           status: 'paid',
           gateway_ref: ref,
+          idempotency_key: `duplicate-${Date.now()}`,
+          is_full_settlement: true,
           paid_at: new Date(),
         });
       })
@@ -319,8 +303,8 @@ describe('Financial and Inventory Module Tests', () => {
         customer_id: customerId,
         device_id: deviceId,
         received_by: userId,
-        ticket_code: 'SRV-RACE-' + Date.now(),
-        tracking_token: 'TOKEN-RACE-' + Date.now(),
+        ticket_code: 'SRV' + Date.now().toString().slice(-10),
+        tracking_token: 'TOKEN' + Date.now().toString().slice(-10),
         service_method: 'dropoff',
         complaint: 'Race condition test',
         current_status: 'antrian',

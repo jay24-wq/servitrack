@@ -1,7 +1,122 @@
-import { Wrench, Microscope, Devices, ShieldCheck, Speedometer, Truck, Scroll, Kanban, Handshake, Motorcycle, Check, Alarm, ShieldCheckered, Star, Ticket, MagnifyingGlass, CalendarDots, ListPlus, MapPinArea, ChatText, Eye, SealCheck, Headset, CalendarPlus, Lock, QrCode, X } from '@phosphor-icons/react';
+import { Wrench, Microscope, Devices, ShieldCheck, Speedometer, Truck, Scroll, Kanban, Handshake, Motorcycle, Check, Alarm, ShieldCheckered, Star, Ticket, MagnifyingGlass, CalendarDots, ListPlus, MapPinArea, ChatText, Eye, SealCheck, Headset, CalendarPlus, Lock, QrCode } from '@phosphor-icons/react';
+import { motion, useAnimationFrame, useMotionValue, useReducedMotion, useScroll, useSpring, useTransform, useVelocity } from 'motion/react';
 import Navbar from '../../components/Navbar';
-import { useEffect, useState } from 'react';
+import PublicFooter from '../../components/PublicFooter';
+import { useEffect, useRef, useState } from 'react';
 import { getPublicCapacity, TENANT_SLUG, type PublicCapacityResult } from '../../lib/api';
+
+const testimonials = [
+  {
+    quote: 'Biasanya ke tempat servis elektronik rasanya was-was. Di ServiTrack, saya dikirimi foto IC yang terbakar via WA, rincian harganya transparan, dan pengerjaan bisa dilacak menit demi menit.',
+    initials: 'AN',
+    avatarClass: 'bg-sky-100 text-sky-700',
+    name: 'Aditya Nugroho',
+    email: 'adit••••••@gmail.com',
+  },
+  {
+    quote: 'Layanan kurir jemputnya sangat tepat waktu. Kurirnya datang pakai boks khusus dan cek fisik langsung di depan saya. Sangat membantu untuk yang jadwal kantornya padat di Sudirman.',
+    initials: 'CL',
+    avatarClass: 'bg-rose-100 text-amber-800',
+    name: 'Clarissa Larasati',
+    email: 'lara••••••@gmail.com',
+  },
+  {
+    quote: 'Kapasitas antriannya jujur. Kalau penuh ya dibilang penuh, jadi tidak ada cerita laptop menginap berminggu-minggu tanpa kabar. Dua hari langsung kelar ganti baterai dan thermal paste.',
+    initials: 'MR',
+    avatarClass: 'bg-slate-100 text-slate-700',
+    name: 'M. Rizky Pratama',
+    email: 'mrizky••••••@gmail.com',
+  },
+];
+
+function TestimonialMarquee() {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const firstSetRef = useRef<HTMLDivElement>(null);
+  const segmentWidth = useRef(0);
+  const isPaused = useRef(false);
+  const x = useMotionValue(0);
+  const prefersReducedMotion = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start end', 'end start'] });
+  const scrollVelocity = useVelocity(scrollYProgress);
+  const smoothVelocity = useSpring(scrollVelocity, { damping: 50, stiffness: 400 });
+  const velocityFactor = useTransform(smoothVelocity, [-1, 0, 1], [-2, 0, 2], { clamp: false });
+
+  useEffect(() => {
+    const firstSet = firstSetRef.current;
+    if (!firstSet) return;
+
+    const measure = () => {
+      segmentWidth.current = firstSet.offsetWidth;
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(firstSet);
+    return () => observer.disconnect();
+  }, []);
+
+  useAnimationFrame((_, delta) => {
+    const width = segmentWidth.current;
+    if (prefersReducedMotion || isPaused.current || !width) return;
+
+    const pixelsPerSecond = 18 + velocityFactor.get() * 12;
+    const nextX = x.get() - pixelsPerSecond * (delta / 1000);
+    const wrappedX = nextX < 0
+      ? -((-nextX) % width)
+      : nextX > 0
+        ? -width + (nextX % width)
+        : 0;
+
+    x.set(wrappedX);
+  });
+
+  const pause = () => { isPaused.current = true; };
+  const resume = () => { isPaused.current = false; };
+
+  return (
+    <div ref={sectionRef}>
+      <div
+        aria-label="Ulasan pelanggan"
+        className="overflow-hidden focus:overflow-x-auto focus:overflow-y-hidden motion-reduce:overflow-x-auto motion-reduce:overflow-y-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded-2xl"
+        onBlur={resume}
+        onFocus={pause}
+        onMouseEnter={pause}
+        onMouseLeave={resume}
+        role="region"
+        tabIndex={0}
+      >
+        <motion.div className="flex w-max" style={{ x }}>
+          {[false, true].map((isDuplicate) => (
+            <div
+              aria-hidden={isDuplicate || undefined}
+              className="flex w-max shrink-0 items-stretch gap-6 pr-6"
+              key={String(isDuplicate)}
+              ref={isDuplicate ? undefined : firstSetRef}
+            >
+              {testimonials.map((testimonial) => (
+                <article className="flex h-full w-[min(86vw,420px)] shrink-0 flex-col justify-between gap-6 rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition duration-300 hover:-translate-y-1" key={`${testimonial.name}-${isDuplicate}`}>
+                  <div>
+                    <div aria-label="5 dari 5 bintang" className="mb-4 flex gap-1 text-sm text-amber-400">
+                      {Array.from({ length: 5 }, (_, index) => <Star key={index} weight="fill" />)}
+                    </div>
+                    <p className="text-sm leading-relaxed text-neutral-800 italic md:text-base">{testimonial.quote}</p>
+                  </div>
+                  <div className="flex items-center gap-3 border-t border-stone-100 pt-4">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-full font-bold ${testimonial.avatarClass}`}>{testimonial.initials}</div>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-neutral-900">{testimonial.name}</span>
+                      <span className="text-xs text-stone-500">{testimonial.email}</span>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ))}
+        </motion.div>
+      </div>
+    </div>
+  );
+}
 
 function getForecastDates(capacityData: PublicCapacityResult | null) {
   const today = new Date();
@@ -65,19 +180,19 @@ export default function HomePage() {
         
         <div className="flex flex-col sm:flex-row items-center gap-3 mb-8">
           <div className="flex -space-x-3 pop-in">
-            <div className="w-10 h-10 rounded-full bg-sky-600 border-2 border-white flex justify-center items-center text-white text-sm shadow-sm z-40"><Wrench weight="fill" /></div>
-            <div className="w-10 h-10 rounded-full bg-red-500 border-2 border-white flex justify-center items-center text-white text-sm shadow-sm z-30"><Microscope weight="fill" /></div>
-            <div className="w-10 h-10 rounded-full bg-amber-500 border-2 border-white flex justify-center items-center text-white text-sm shadow-sm z-20"><Devices weight="fill" /></div>
-            <div className="w-10 h-10 rounded-full bg-blue-400 border-2 border-white flex justify-center items-center text-white text-sm shadow-sm z-10"><ShieldCheck weight="fill" /></div>
+            <div className="w-8 h-8 rounded-full bg-sky-600 border-2 border-white flex justify-center items-center text-white text-xs md:text-sm shadow-sm z-40"><Wrench weight="fill" /></div>
+            <div className="w-8 h-8 rounded-full bg-red-500 border-2 border-white flex justify-center items-center text-white text-xs md:text-sm shadow-sm z-30"><Microscope weight="fill" /></div>
+            <div className="w-8 h-8 rounded-full bg-amber-500 border-2 border-white flex justify-center items-center text-white text-xs md:text-sm shadow-sm z-20"><Devices weight="fill" /></div>
+            <div className="w-8 h-8 rounded-full bg-blue-400 border-2 border-white flex justify-center items-center text-white text-xs md:text-sm shadow-sm z-10"><ShieldCheck weight="fill" /></div>
           </div>
           <div className="flex flex-col text-center sm:text-left">
             <span className="text-neutral-900 text-xs font-semibold">38+ Teknisi Terverifikasi</span>
-            <span className="text-stone-500 text-[11px]">Apple, Lenovo, Asus, Samsung Certified</span>
+            <span className="text-stone-500 text-xs">Apple, Lenovo, Asus, Samsung Certified</span>
           </div>
         </div>
 
         <div className="max-w-4xl text-center mb-6 page-enter page-enter-delay">
-          <h1 className="text-black font-bold text-4xl sm:text-5xl lg:text-7xl leading-tight sm:leading-[1.15]">
+          <h1 className="text-black font-bold text-2xl sm:text-5xl lg:text-7xl leading-none sm:leading-[1.15]">
             Perbaikan perangkat kini<br/>
             <span className="inline-block px-4 py-1 mt-2 mb-2 bg-rose-200 text-amber-800 rounded-lg shadow-sm -rotate-1">
               transparan
@@ -88,22 +203,22 @@ export default function HomePage() {
 
 
         {/* Subheadline */}
-        <p className="max-w-2xl text-center text-stone-600 text-base md:text-lg leading-relaxed mb-10">
+        <p className="max-w-2xl text-center text-stone-600 text-sm md:text-lg leading-relaxed mb-10">
           Pantau setiap tahapan servis secara real-time langsung dari genggaman Anda. Dari penjemputan unit, papan kerja teknisi, hingga nota digital otomatis via WhatsApp Business.
         </p>
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row items-center gap-3 mb-16 w-full sm:w-auto">
-          <a href="/booking" className="w-full sm:w-auto px-8 py-3.5 bg-sky-600 hover:bg-sky-700 rounded-lg shadow-sm text-white text-sm font-semibold flex items-center justify-center gap-2 transition">
+          <a href="/booking" className="w-auto sm:w-auto px-8 py-3.5 bg-sky-600 hover:bg-sky-700 rounded-lg shadow-sm text-white text-xs font-semibold flex items-center justify-center gap-2 transition">
             <CalendarDots weight="fill" /> Booking Servis Sekarang
           </a>
-          <a href="/kapasitas" className="w-full sm:w-auto px-8 py-3.5 bg-sky-50 border border-sky-100 hover:bg-sky-100 text-sky-700 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition">
+          <a href="/kapasitas" className="w-auto sm:w-auto px-8 py-3.5 bg-sky-50 border border-sky-100 hover:bg-sky-100 text-sky-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition">
             <ListPlus weight="bold" /> Cek Kuota Antrian Hari Ini
           </a>
         </div>
 
         {/* Tracking Input Box */}
-        <div className="w-full max-w-2xl p-4 md:p-6 bg-white rounded-2xl shadow-lg border border-black/5 flex flex-col gap-4 float-soft page-enter page-enter-delay-2">
+        <div className="w-full max-w-2xl md:p-6 bg-white rounded-2xl shadow-lg border border-black/5 flex flex-col gap-4 float-soft page-enter page-enter-delay-2">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2 text-sky-600 text-xs font-bold uppercase tracking-wide">
               <MagnifyingGlass weight="bold" /> Lacak Resi & Diagnostic Cepat
@@ -132,7 +247,7 @@ export default function HomePage() {
             
             <div className="flex flex-col gap-2 max-w-lg">
               <div className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full w-max flex items-center gap-2 text-xs font-semibold">
-                <Speedometer weight="fill" /> Real-time Capacity Barometer
+                <Speedometer weight="fill" /> Real-time Capacity
               </div>
               <h2 className="text-black text-2xl font-bold mt-1">Kapasitas Antrian Servis Hari Ini</h2>
               <p className="text-stone-600 text-sm leading-relaxed">Sistem load-balancing workshop mencegah pengerjaan tertunda & memastikan SLA waktu terjamin.</p>
@@ -187,18 +302,18 @@ export default function HomePage() {
           
           <div className="text-center max-w-2xl flex flex-col items-center gap-3 mb-12">
             <span className="px-3 py-1 bg-sky-100 text-sky-700 rounded-full text-xs font-bold uppercase tracking-wide">SOP Reparasi Berstandar Industri</span>
-            <h2 className="text-black text-3xl md:text-4xl font-bold leading-tight">Alur Servis Tanpa Cemas dalam 4 Langkah</h2>
-            <p className="text-stone-600 text-base">Transparan sejak detik pertama Anda mendaftar hingga perangkat kembali prima dengan segel garansi resmi.</p>
+            <h2 className="text-black text-2xl md:text-4xl font-bold leading-tight">Alur Servis Tanpa Cemas dalam 4 Langkah</h2>
+            <p className="text-stone-600 text-sm">Transparan sejak detik pertama Anda mendaftar hingga perangkat kembali prima dengan segel garansi resmi.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
             <div className="p-6 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col justify-between h-full gap-6">
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <span className="w-9 h-9 bg-sky-50 text-sky-700 font-bold rounded-lg flex justify-center items-center text-sm">01</span>
+                  <span className="w-9 h-9 bg-sky-100 text-sky-700 font-bold rounded-lg flex justify-center items-center text-sm">01</span>
                   <Truck className="text-stone-400 text-2xl" />
                 </div>
-                <h3 className="text-neutral-900 text-lg font-bold mb-2">Booking & Pilihan Kedatangan</h3>
+                <h3 className="text-neutral-900 text-base md:text-lg font-bold mb-2">Booking & Pilihan Kedatangan</h3>
                 <p className="text-sm text-stone-600">Tentukan metode: <strong>Pickup Kurir</strong> langsung jemput ke rumah/kantor, atau <strong>Dropoff</strong> mandiri ke workshop.</p>
               </div>
               <div className="inline-flex items-center gap-2 text-sky-700 text-xs font-semibold pt-4 border-t border-stone-100">
@@ -212,7 +327,7 @@ export default function HomePage() {
                   <span className="w-9 h-9 bg-rose-100 text-amber-800 font-bold rounded-lg flex justify-center items-center text-sm">02</span>
                   <Scroll className="text-stone-400 text-2xl" />
                 </div>
-                <h3 className="text-neutral-900 text-lg font-bold mb-2">Check-in Digital & Nota Otomatis</h3>
+                <h3 className="text-neutral-900 text-base md:text-lg font-bold mb-2">Check-in Digital & Nota Otomatis</h3>
                 <p className="text-sm text-stone-600">Foto kondisi fisik awal terunggah aman. Tanda terima resmi & tracking link otomatis ke WhatsApp.</p>
               </div>
               <div className="inline-flex items-center gap-2 text-amber-700 text-xs font-semibold pt-4 border-t border-stone-100">
@@ -226,7 +341,7 @@ export default function HomePage() {
                   <span className="w-9 h-9 bg-slate-100 text-gray-900 font-bold rounded-lg flex justify-center items-center text-sm">03</span>
                   <Kanban className="text-stone-400 text-2xl" />
                 </div>
-                <h3 className="text-neutral-900 text-lg font-bold mb-2">Transparansi Kanban Pengerjaan</h3>
+                <h3 className="text-neutral-900 text-base md:text-lg font-bold mb-2">Transparansi Kanban Pengerjaan</h3>
                 <p className="text-sm text-stone-600">Pantau pergerakan status: Diagnostik → Eksekusi Servis → Quality Check bersama catatan foto perbaikan.</p>
               </div>
               <div className="inline-flex items-center gap-2 text-sky-600 text-xs font-semibold pt-4 border-t border-stone-100">
@@ -240,120 +355,13 @@ export default function HomePage() {
                   <span className="w-9 h-9 bg-zinc-100 text-neutral-900 font-bold rounded-lg flex justify-center items-center text-sm">04</span>
                   <Handshake className="text-stone-400 text-2xl" />
                 </div>
-                <h3 className="text-neutral-900 text-lg font-bold mb-2">Persetujuan Biaya (Quotation)</h3>
+                <h3 className="text-neutral-900 text-base md:text-lg font-bold mb-2">Persetujuan Biaya (Quotation)</h3>
                 <p className="text-sm text-stone-600">Tidak ada tagihan membengkak. Penggantian part wajib disetujui konsumen via 1-click digital approval.</p>
               </div>
               <div className="inline-flex items-center gap-2 text-neutral-900 text-xs font-semibold pt-4 border-t border-stone-100">
                 <SealCheck weight="fill" /> Zero Hidden Fee Guarantee
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. TIERED SUBSCRIPTION SECTION */}
-      <section className="w-full max-w-7xl px-4 md:px-8 py-20 reveal-up">
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <span className="px-3 py-1 bg-sky-100 text-sky-700 rounded-full text-xs font-bold uppercase tracking-wide inline-block mb-4">Paket Langganan Multi-Tenant</span>
-          <h2 className="text-black text-3xl md:text-4xl font-bold leading-tight mb-4">Pilih Paket Sesuai Skala Operasional Workshop Anda</h2>
-          <p className="text-stone-600 text-base">Sistem berbasis SaaS dengan fitur modular. Upgrade kapan saja tanpa downtime.</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          {/* Starter */}
-          <div className="p-6 bg-white rounded-2xl shadow-sm border-2 border-stone-200 flex flex-col gap-6">
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="px-3 py-1 bg-stone-100 text-stone-700 rounded-full text-xs font-bold">STARTER</span>
-              </div>
-              <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-black text-4xl font-bold">Rp 299k</span>
-                <span className="text-stone-500 text-sm">/bulan</span>
-              </div>
-              <p className="text-stone-600 text-sm">Untuk workshop kecil dengan tim minimal</p>
-            </div>
-
-            <ul className="flex flex-col gap-3 text-sm">
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Maksimal 3 user (Admin, Frontdesk, Teknisi)</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Kuota 100 tiket servis per bulan</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Fitur operasional dasar</span></li>
-              <li className="flex items-start gap-2"><X className="text-stone-300 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-400 line-through">Notifikasi WhatsApp otomatis</span></li>
-              <li className="flex items-start gap-2"><X className="text-stone-300 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-400 line-through">Quotation approval digital</span></li>
-              <li className="flex items-start gap-2"><X className="text-stone-300 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-400 line-through">Multi-Branch</span></li>
-              <li className="flex items-start gap-2"><X className="text-stone-300 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-400 line-through">Modul kurir lapangan</span></li>
-            </ul>
-
-            <button className="w-full px-6 py-3 bg-stone-100 hover:bg-stone-200 text-neutral-900 rounded-lg text-sm font-semibold transition mt-auto">
-              Pilih Starter
-            </button>
-          </div>
-
-          {/* Pro */}
-          <div className="p-6 bg-sky-50 rounded-2xl shadow-lg border-2 border-sky-600 flex flex-col gap-6 relative">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-sky-600 text-white rounded-full text-xs font-bold">
-              PALING POPULER
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="px-3 py-1 bg-sky-600 text-white rounded-full text-xs font-bold">PRO</span>
-              </div>
-              <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-black text-4xl font-bold">Rp 599k</span>
-                <span className="text-stone-500 text-sm">/bulan</span>
-              </div>
-              <p className="text-stone-600 text-sm">Untuk workshop menengah dengan volume tinggi</p>
-            </div>
-
-            <ul className="flex flex-col gap-3 text-sm">
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">User tidak terbatas</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Tiket servis tidak terbatas</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Fitur operasional lengkap</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700 font-semibold">Notifikasi WhatsApp otomatis</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700 font-semibold">Quotation approval digital</span></li>
-              <li className="flex items-start gap-2"><X className="text-stone-300 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-400 line-through">Multi-Branch</span></li>
-              <li className="flex items-start gap-2"><X className="text-stone-300 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-400 line-through">Modul kurir lapangan</span></li>
-            </ul>
-
-            <button className="w-full px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-semibold transition mt-auto">
-              Pilih Pro
-            </button>
-          </div>
-
-          {/* Advance */}
-          <div className="p-6 bg-white rounded-2xl shadow-sm border-2 border-stone-200 flex flex-col gap-6">
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">ADVANCE</span>
-              </div>
-              <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-black text-4xl font-bold">Rp 1.5jt</span>
-                <span className="text-stone-500 text-sm">/bulan</span>
-              </div>
-              <p className="text-stone-600 text-sm">Untuk enterprise dengan multi-cabang</p>
-            </div>
-
-            <ul className="flex flex-col gap-3 text-sm">
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Semua fitur Pro</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700 font-semibold">Multi-Branch tanpa batas</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700 font-semibold">Modul kurir lapangan</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Pickup/dropoff tracking GPS</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Prioritas support 24/7</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">Custom branding & domain</span></li>
-              <li className="flex items-start gap-2"><Check className="text-sky-600 shrink-0 mt-0.5" weight="bold" size={18} /><span className="text-stone-700">API access untuk integrasi</span></li>
-            </ul>
-
-            <button className="w-full px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition mt-auto">
-              Pilih Advance
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-12 p-6 bg-stone-50 rounded-xl border border-stone-200 text-center">
-          <div className="flex flex-wrap justify-center gap-4 text-xs font-medium text-stone-500">
-            <div className="flex items-center gap-1.5"><Lock className="text-sky-600" size={16} weight="fill" /> Enkripsi end-to-end</div>
-            <div className="flex items-center gap-1.5"><SealCheck className="text-sky-600" size={16} weight="fill" /> Garansi uptime 99.9%</div>
-            <div className="flex items-center gap-1.5"><ChatText className="text-sky-600" size={16} weight="fill" /> Support teknis responsif</div>
           </div>
         </div>
       </section>
@@ -366,21 +374,21 @@ export default function HomePage() {
             <span className="px-3 py-1 bg-rose-100 text-amber-800 rounded-full w-max text-xs font-semibold flex items-center gap-1.5">
               <Motorcycle weight="fill" /> Armada Penjemputan Resmi ServiTrack
             </span>
-            <h2 className="text-black text-3xl md:text-5xl font-bold leading-tight">Tidak sempat keluar rumah?<br/>Kurir kami yang jemput.</h2>
-            <p className="text-stone-600 text-base leading-relaxed max-w-xl">
+            <h2 className="text-black text-2xl md:text-5xl font-bold leading-tight">Tidak sempat keluar rumah?<br/>Kurir kami yang jemput.</h2>
+            <p className="text-stone-600 text-sm md:text-base leading-relaxed max-w-xl">
               Nikmati pengalaman reparasi gadget layaknya layanan hospitality. Kurir berseragam resmi dilengkapi kotak transportasi anti-statis akan mengambil unit langsung dari meja Anda.
             </p>
 
             <div className="flex flex-col gap-4 mt-2">
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-sky-100 text-sky-700 rounded-full flex justify-center items-center shrink-0"><Check weight="bold" /></div>
+                <div className="w-8 md:w-10 h-8 md:h-10 bg-sky-100 text-sky-700 rounded-full flex justify-center items-center shrink-0"><Check weight="bold" /></div>
                 <div>
                   <h4 className="text-neutral-900 font-semibold mb-1">Inspeksi Fisik di Tempat</h4>
                   <p className="text-stone-600 text-sm">Kurir memotret kelengkapan & kondisi awal di depan Anda sebelum masuk kantong segel tamper-proof.</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-sky-100 text-sky-700 rounded-full flex justify-center items-center shrink-0"><Check weight="bold" /></div>
+                <div className="w-8 md:w-10 h-8 md:h-10 bg-sky-100 text-sky-700 rounded-full flex justify-center items-center shrink-0"><Check weight="bold" /></div>
                 <div>
                   <h4 className="text-neutral-900 font-semibold mb-1">Asuransi Perjalanan Penuh</h4>
                   <p className="text-stone-600 text-sm">Transit unit diproteksi asuransi pengiriman hingga nilai penuh perangkat selama perjalanan.</p>
@@ -422,99 +430,51 @@ export default function HomePage() {
       </section>
 
       {/* 6. STATS & TESTIMONIALS */}
-      <section className="w-full bg-white pt-8 pb-16 flex flex-col items-center border-t border-stone-100">
+      <section className="w-full bg-white md:pt-8 pb-16 flex flex-col items-center border-t border-stone-100">
         <div className="w-full max-w-7xl px-4 md:px-8">
           
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-20">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-20">
             <div className="p-6 bg-white border border-stone-100 rounded-xl shadow-sm text-center flex flex-col items-center">
-              <span className="text-black text-4xl md:text-5xl font-bold mb-2">12k+</span>
+              <span className="text-black text-3xl md:text-5xl font-bold mb-2">12k+</span>
               <span className="text-stone-500 text-xs font-medium">Perangkat Tertangani</span>
             </div>
             <div className="p-6 bg-white border border-stone-100 rounded-xl shadow-sm text-center flex flex-col items-center">
-              <span className="text-sky-600 text-4xl md:text-5xl font-bold mb-2">99.2%</span>
+              <span className="text-sky-600 text-3xl md:text-5xl font-bold mb-2">99.2%</span>
               <span className="text-stone-500 text-xs font-medium">Kepuasan Pelanggan</span>
             </div>
             <div className="p-6 bg-white border border-stone-100 rounded-xl shadow-sm text-center flex flex-col items-center">
-              <span className="text-black text-4xl md:text-5xl font-bold mb-2">90 Hari</span>
+              <span className="text-black text-3xl md:text-5xl font-bold mb-2">90 Hari</span>
               <span className="text-stone-500 text-xs font-medium">Garansi Resmi Servis</span>
             </div>
             <div className="p-6 bg-white border border-stone-100 rounded-xl shadow-sm text-center flex flex-col items-center">
-              <span className="text-amber-600 text-4xl md:text-5xl font-bold mb-2">100%</span>
+              <span className="text-amber-600 text-3xl md:text-5xl font-bold mb-2">100%</span>
               <span className="text-stone-500 text-xs font-medium">Suku Cadang Orisinal</span>
             </div>
           </div>
 
           <div className="text-center mb-12 flex flex-col items-center gap-2">
             <span className="text-stone-500 text-xs font-bold uppercase tracking-widest">Ulasan Nyata Pelanggan</span>
-            <h2 className="text-black text-3xl md:text-4xl font-bold">Transparansi yang Menenangkan</h2>
+            <h2 className="text-black text-2xl md:text-4xl font-bold">Transparansi yang Menenangkan</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-6 bg-white border border-stone-200 rounded-2xl shadow-sm flex flex-col justify-between gap-6 hover:-translate-y-1 transition duration-300">
-              <div>
-                <div className="flex text-amber-400 text-sm mb-4 gap-1">
-                  <Star weight="fill" /><Star weight="fill" /><Star weight="fill" /><Star weight="fill" /><Star weight="fill" />
-                </div>
-                <p className="text-neutral-800 text-base italic leading-relaxed">Biasanya ke tempat servis elektronik rasanya was-was. Di ServiTrack, saya dikirimi foto IC yang terbakar via WA, rincian harganya transparan, dan pengerjaan bisa dilacak menit demi menit.</p>
-              </div>
-              <div className="flex items-center gap-3 pt-4 border-t border-stone-100">
-                <div className="w-10 h-10 bg-sky-100 text-sky-700 font-bold rounded-full flex justify-center items-center">AN</div>
-                <div className="flex flex-col">
-                  <span className="text-neutral-900 text-sm font-bold">Aditya Nugroho</span>
-                  <span className="text-stone-500 text-xs">Product Lead • MacBook Pro M1</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 bg-white border border-stone-200 rounded-2xl shadow-sm flex flex-col justify-between gap-6 hover:-translate-y-1 transition duration-300">
-              <div>
-                <div className="flex text-amber-400 text-sm mb-4 gap-1">
-                  <Star weight="fill" /><Star weight="fill" /><Star weight="fill" /><Star weight="fill" /><Star weight="fill" />
-                </div>
-                <p className="text-neutral-800 text-base italic leading-relaxed">Layanan kurir jemputnya sangat tepat waktu. Kurirnya datang pakai boks khusus dan cek fisik langsung di depan saya. Sangat membantu untuk yang jadwal kantornya padat di Sudirman.</p>
-              </div>
-              <div className="flex items-center gap-3 pt-4 border-t border-stone-100">
-                <div className="w-10 h-10 bg-rose-100 text-amber-800 font-bold rounded-full flex justify-center items-center">CL</div>
-                <div className="flex flex-col">
-                  <span className="text-neutral-900 text-sm font-bold">Clarissa Larasati</span>
-                  <span className="text-stone-500 text-xs">Financial Analyst • ThinkPad X1</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 bg-white border border-stone-200 rounded-2xl shadow-sm flex flex-col justify-between gap-6 hover:-translate-y-1 transition duration-300">
-              <div>
-                <div className="flex text-amber-400 text-sm mb-4 gap-1">
-                  <Star weight="fill" /><Star weight="fill" /><Star weight="fill" /><Star weight="fill" /><Star weight="fill" />
-                </div>
-                <p className="text-neutral-800 text-base italic leading-relaxed">Kapasitas antriannya jujur. Kalau penuh ya dibilang penuh, jadi tidak ada cerita laptop menginap berminggu-minggu tanpa kabar. Dua hari langsung kelar ganti baterai dan thermal paste.</p>
-              </div>
-              <div className="flex items-center gap-3 pt-4 border-t border-stone-100">
-                <div className="w-10 h-10 bg-slate-100 text-slate-700 font-bold rounded-full flex justify-center items-center">MR</div>
-                <div className="flex flex-col">
-                  <span className="text-neutral-900 text-sm font-bold">M. Rizky Pratama</span>
-                  <span className="text-stone-500 text-xs">Content Creator • Sony A7IV</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <TestimonialMarquee />
         </div>
       </section>
 
       {/* 7. BOTTOM CTA */}
       <section className="w-full bg-white px-4 md:px-8 py-16 flex flex-col items-center">
         <div className="w-full max-w-4xl p-10 md:p-14 bg-stone-50 rounded-3xl border border-stone-200 text-center flex flex-col items-center gap-4">
-          <span className="px-4 py-1.5 bg-sky-100 text-sky-700 rounded-full text-xs font-bold inline-flex items-center gap-2">
+          <span className="py-1.5 bg-sky-100 text-sky-700 rounded-full text-xs font-bold inline-flex items-center gap-2">
             <Headset weight="fill" /> Konsultasi Gratis & Tanpa Komitmen
           </span>
-          <h2 className="text-black text-3xl md:text-5xl font-bold mt-2 leading-tight">Punya gadget bermasalah atau<br className="hidden md:block"/>butuh estimasi biaya cepat?</h2>
-          <p className="text-stone-600 text-base max-w-xl mx-auto mb-4">Tim diagnostik ServiTrack siap memeriksa gejala awal kerusakan perangkat Anda secara daring dalam hitungan menit.</p>
+          <h2 className="text-black text-2xl md:text-5xl font-bold mt-2 leading-tight">Punya gadget bermasalah atau<br className="hidden md:block"/> butuh estimasi biaya cepat?</h2>
+          <p className="text-stone-600 text-sm md:text-base max-w-xl mx-auto mb-4">Tim diagnostik ServiTrack siap memeriksa gejala awal kerusakan perangkat Anda secara daring dalam hitungan menit.</p>
           
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-            <a href="/booking" className="w-full sm:w-auto px-8 py-3.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+            <a href="/booking" className="w-full sm:w-auto md:px-4 py-3.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
               <CalendarPlus weight="fill" /> Jadwalkan Servis Sekarang
             </a>
-            <a href="#" className="w-full sm:w-auto px-8 py-3.5 bg-white border border-stone-200 hover:bg-stone-50 text-neutral-900 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+            <a href="#" className="w-full sm:w-auto px-4 py-3.5 bg-white border border-stone-200 hover:bg-stone-50 text-neutral-900 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
               <ChatText className="text-green-500 text-lg" weight="fill" /> WhatsApp Toko
             </a>
           </div>
@@ -527,57 +487,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 9. FOOTER */}
-      <footer className="w-full bg-stone-100 border-t border-black/5 flex flex-col items-center pt-12 pb-6 px-4 md:px-8">
-        <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
-          
-          <div className="flex flex-col gap-4 pr-4">
-            <div className="flex items-center gap-2">
-              <img src="/logos.webp" alt="ServiTrack Logo" className="w-5 h-5 object-contain" />
-              <span className="text-neutral-900 text-lg font-bold">ServiTrack</span>
-            </div>
-            <p className="text-stone-600 text-sm leading-relaxed">Pusat reparasi elektronik modern bersertifikasi teknisi spesialis dengan telemetri live tracking pengerjaan.</p>
-            <div className="text-xs text-stone-500 mt-2">
-              <strong>Workshop Utama:</strong><br/>Jl. Kampus Bukit Jimbaran,<br/>Computer Science Building, Bali
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <h4 className="text-neutral-900 text-sm font-bold">Jam Operasional</h4>
-            <ul className="text-sm text-stone-600 space-y-2">
-              <li>Senin - Jumat: 08:30 - 19:00 WITA</li>
-              <li>Sabtu: 09:00 - 17:00 WITA</li>
-            </ul>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <h4 className="text-neutral-900 text-sm font-bold">Cakupan Jemput Antar</h4>
-            <ul className="text-sm text-stone-600 space-y-2">
-              <li>Kota Denpasar (1 Jam)</li>
-              <li>Kabupaten Badung</li>
-              <li>Luar Kota: Ekspedisi Partner</li>
-            </ul>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <h4 className="text-neutral-900 text-sm font-bold">Pusat Akses & Bantuan</h4>
-            <ul className="text-sm text-stone-600 space-y-2">
-              <li><a href="#" className="hover:text-sky-600 transition">Tracking ID Resi</a></li>
-              <li><a href="/kapasitas" className="hover:text-sky-600 transition">Cek Antrian Teknisi Hari Ini</a></li>
-              <li><a href="#" className="hover:text-sky-600 transition">Katalog Suku Cadang & Garansi</a></li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="w-full max-w-7xl pt-6 border-t border-stone-200 flex flex-col md:flex-row justify-between items-center gap-4">
-          <span className="text-stone-500 text-xs">© 2026 ServiTrack. Hak Cipta Dilindungi.</span>
-          <div className="flex items-center gap-4 text-xs text-stone-500">
-            <a href="#" className="hover:text-stone-800 transition">Syarat & Ketentuan Servis</a>
-            <a href="#" className="hover:text-stone-800 transition">Kebijakan Privasi</a>
-            <a href="#" className="hover:text-stone-800 transition">SOP Penanganan Device</a>
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
 
       </main>
     </div>

@@ -4,9 +4,12 @@ export type QueueStatus =
   | 'Antrian'
   | 'Pengecekan'
   | 'Menunggu Part'
+  | 'Menunggu Persetujuan'
   | 'Pengerjaan'
   | 'Quality Control'
-  | 'Selesai';
+  | 'Selesai'
+  | 'Siap Diambil'
+  | 'Dibatalkan';
 
 export type Handover = 'Antar-Jemput' | 'Drop-off' | 'Pick-up';
 
@@ -15,6 +18,10 @@ export interface PartUsage {
   name: string;
   qty: number;
   price: number;
+  sku?: string;
+  unit?: string;
+  usedAt?: string;
+  usedBy?: string;
 }
 
 export type QuotationType = 'EXTRA_DAMAGE' | 'PART_OUT_OF_STOCK';
@@ -36,11 +43,30 @@ export interface TechnicianNote {
 
 export interface QueueTicket {
   id: string;
+  recordId?: string;
   time: string;
   customer: string;
   phone: string;
   handover: Handover;
   device: string;
+  devicePin?: string | null;
+  pinRefused?: boolean;
+  workType?: 'without_parts' | 'with_parts' | null;
+  diagnosisStatus?: 'matches_complaint' | 'additional_damage' | null;
+  technicianDiagnosis?: string | null;
+  additionalDamage?: string | null;
+  requestedPartId?: string | null;
+  requestedPartQty?: number | null;
+  partShortages?: Array<{
+    part_id: string;
+    part_name: string;
+    required_qty: number;
+    available_qty: number;
+    shortage_qty: number;
+    part_request_id?: string | null;
+    part_request_status?: string;
+    estimated_arrival_days?: number | null;
+  }>;
   diagnosis: string;
   technician: string;
   technicianInitials: string;
@@ -49,7 +75,6 @@ export interface QueueTicket {
   slaTone: string;
   slaSecondary: string;
   slaTertiary?: string;
-  serial?: string;
   extraDamage?: boolean;
   partsUsed?: PartUsage[];
   quotation?: TicketQuotation | null;
@@ -90,7 +115,10 @@ export const FLOW_STAGES: QueueStatus[] = [
   'Antrian',
   'Pengecekan',
   'Menunggu Part',
+  'Menunggu Persetujuan',
   'Pengerjaan',
   'Quality Control',
   'Selesai',
+  'Siap Diambil',
+  'Dibatalkan',
 ];

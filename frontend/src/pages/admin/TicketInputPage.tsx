@@ -17,8 +17,6 @@ import {
   BatteryEmpty,
   Drop,
   UploadSimple,
-  Printer,
-  WhatsappLogo,
   QrCode,
   UserCirclePlus,
   Ticket,
@@ -38,9 +36,9 @@ import { initialsOf } from '../../lib/avatar';
 import { invoiceFromTicket } from '../../lib/ticket-code';
 import { formatRupiah } from '../../lib/ongkir';
 import { useTicketStore, type QueueTicket } from '../../store';
-import { createTicket, getBookings, updateBooking, type CreateTicketPayload } from '../../lib/api';
+import { createTicket, getBookings, getMyAccount, updateBooking, type CreateTicketPayload } from '../../lib/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { mapBookingRow, type BookingRow } from '../../lib/mappers';
+import { canCheckInBooking, getDeviceDisplayName, mapBookingRow, type BookingRow } from '../../lib/mappers';
 
 type Kategori = 'laptop' | 'smartphone' | 'console' | 'workstation';
 
@@ -96,7 +94,6 @@ export default function TicketInputPage() {
   const modeScan = searchParams.get('mode') === 'scan';
   const bookingParam = searchParams.get('booking');
 
-  const tickets = useTicketStore((s) => s.tickets);
   const tambahTiket = useTicketStore((s) => s.tambahTiket);
   const kuotaTerpakai = useTicketStore((s) => s.kuotaTerpakai);
   const kuotaBulanan = useTicketStore((s) => s.kuotaBulanan);
@@ -107,26 +104,31 @@ export default function TicketInputPage() {
     queryFn: getBookings,
     refetchInterval: 15000,
   });
+  const { data: myAccount } = useQuery({
+    queryKey: ['account-profile'],
+    queryFn: getMyAccount,
+    staleTime: 5 * 60 * 1000,
+  });
   const bookings: BookingRow[] = useMemo(() => bookingsRaw.map(mapBookingRow), [bookingsRaw]);
   const hasilCari = useMemo(() => {
     const q = cari.trim().toLowerCase();
-    const pending = bookings.filter((booking) => booking.status === 'MENUNGGU_CHECKIN');
+    const pending = bookings.filter(canCheckInBooking);
     if (!q) return pending;
     const digits = q.replace(/\D/g, '');
       return pending.filter((booking) => {
       const haystack = `${booking.name} ${booking.whatsapp} ${booking.code} ${booking.trackingCode ?? ''} ${booking.queueNumber ?? ''} ${
         booking.device?.model ?? ''
-      } ${booking.device?.serial ?? ''}`.toLowerCase();
+      }`.toLowerCase();
       return haystack.includes(q) || (digits.length >= 3 && booking.whatsapp.replace(/\D/g, '').includes(digits));
     });
   }, [bookings, cari]);
+  const pickupBelumSiap = bookings.filter((booking) => booking.status === 'MENUNGGU_CHECKIN' && !canCheckInBooking(booking)).length;
 
   const [step, setStep] = useState(1);
   const [terpilih, setTerpilih] = useState<BookingRow | null>(null);
 
   const [kategori, setKategori] = useState<Kategori>('laptop');
   const [model, setModel] = useState('');
-  const [serial, setSerial] = useState('');
   const [pin, setPin] = useState('');
   const [pinRefused, setPinRefused] = useState(false);
   const [gejala, setGejala] = useState<string[]>([]);
@@ -141,46 +143,41 @@ export default function TicketInputPage() {
     invoice: string;
     booking?: BookingRow;
     trackingCode?: string;
+    tenantName: string | null;
+    tenantAddress: string | null;
   } | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [errorSimpan, setErrorSimpan] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [membatalkan, setMembatalkan] = useState<string | null>(null);
   const [errorBooking, setErrorBooking] = useState('');
   const queryClient = useQueryClient();
 
-  const serialRef = useRef<HTMLInputElement>(null);
+  const savingLock = useRef(false);
   const autoBookingApplied = useRef(false);
+  const pinFromBooking = Boolean(terpilih && terpilih.method !== 'mandiri' && (terpilih.pinRefused || (terpilih.devicePin?.trim().length ?? 0) >= 4));
   const kuotaPenuh = kuotaTerpakai >= kuotaBulanan;
 
   useEffect(() => {
     if (!bookingParam || autoBookingApplied.current) return;
     const target = bookings.find((booking) => booking.id === bookingParam);
-    if (target && target.status === 'MENUNGGU_CHECKIN') {
+    if (target && canCheckInBooking(target)) {
       autoBookingApplied.current = true;
       pilihBooking(target);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingParam, bookings]);
 
-  useEffect(() => {
-    if (step === 2) serialRef.current?.focus();
-  }, [step]);
-
-  const serialTerpakai = useMemo(
-    () => tickets.map((ticket) => ticket.serial?.toLowerCase()).filter(Boolean) as string[],
-    [tickets]
-  );
-
   function pilihBooking(booking: BookingRow) {
+    setIdempotencyKey(crypto.randomUUID());
     setTerpilih(booking);
     setNama(booking.name);
     setWhatsapp(booking.whatsapp.replace(/^\+62/, ''));
     setKategori(booking.device?.category ?? 'laptop');
     setModel(booking.device?.model ?? '');
-    setSerial(booking.device?.serial ?? '');
-    setPin('');
-    setPinRefused(false);
+    setPin(booking.devicePin ?? '');
+    setPinRefused(booking.pinRefused);
     setGejala(booking.device?.symptoms ?? []);
     setKronologi(booking.complaint ?? '');
     setFiles([]);
@@ -224,20 +221,16 @@ export default function TicketInputPage() {
     const baru: Record<string, string> = {};
     if (nama.trim().length < 3) baru.nama = 'Nama pemilik minimal 3 karakter.';
     if (!waValid) baru.whatsapp = 'Nomor WhatsApp harus 10–15 digit.';
-    if (model.trim().length < 2) baru.model = 'Merk & model perangkat wajib diisi.';
-    if (serial.trim().length < 3) baru.serial = 'Nomor seri wajib diisi.';
-    if (serialTerpakai.includes(serial.trim().toLowerCase())) {
-      baru.serial = 'Nomor seri ini sudah punya tiket aktif — periksa tiket lama sebelum membuat baru.';
-    }
+    if (!model.trim() || model.trim() === '-' || model.length > 80) baru.model = 'Nama merk & model perangkat wajib diisi (maksimal 80 karakter).';
     if (gejala.length === 0) baru.gejala = 'Pilih minimal satu kategori gejala.';
     if (kronologi.trim().length < 20) baru.kronologi = 'Kronologi minimal 20 karakter.';
-    if (pin.trim().length < 4 && !pinRefused) baru.pin = 'Isi PIN atau centang “pelanggan menolak memberi PIN”.';
+    if (!pinFromBooking && pin.trim().length < 4 && !pinRefused) baru.pin = 'Isi PIN atau centang “pelanggan menolak memberi PIN”.';
     return baru;
   };
 
   const simpan = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (kuotaPenuh || menyimpan) return;
+    if (kuotaPenuh || menyimpan || savingLock.current) return;
     const baru = cekForm();
     setErrors(baru);
     if (Object.keys(baru).length > 0) return;
@@ -257,16 +250,19 @@ export default function TicketInputPage() {
       customer_name: nama.trim(),
       customer_phone: normalisasiWhatsapp(whatsapp),
       device_category: kategori,
-      device_brand: terpilih?.device?.brand || model.trim().split(' ')[0] || model.trim(),
-      device_model: model.trim(),
-      device_serial: serial.trim(),
+      device_model: model,
       initial_estimate_cost: estimasiJasa.trim() ? Number(estimasiJasa.replace(/\D/g, '')) : null,
+      device_pin: pin.trim() || undefined,
+      device_pin_refused: pinRefused,
     };
 
     setErrorSimpan('');
+    savingLock.current = true;
     setMenyimpan(true);
     try {
-      const tiketDb = await createTicket(payload);
+      const requestKey = idempotencyKey ?? crypto.randomUUID();
+      if (!idempotencyKey) setIdempotencyKey(requestKey);
+      const tiketDb = await createTicket(payload, requestKey);
       const kode = String(tiketDb?.ticket_code ?? '');
       const assignedTechnician = String(tiketDb?.technician_name ?? '').trim();
       const assignedInitials = assignedTechnician
@@ -283,15 +279,14 @@ export default function TicketInputPage() {
         customer: nama.trim(),
         phone: normalisasiWhatsapp(whatsapp),
         handover: terpilih ? HANDOVER_FROM_METHOD[terpilih.method] : 'Drop-off',
-        device: model.trim(),
-        diagnosis: `${labelGejala} — ${kronologi.trim().slice(0, 60)}`,
+        device: getDeviceDisplayName(model),
+        diagnosis: `${labelGejala} - ${kronologi.trim().slice(0, 60)}`,
         technician: assignedTechnician || 'Belum ditugaskan',
         technicianInitials: assignedInitials,
         status: 'Antrian',
         slaPrimary: `SLA: ${slaMenit} menit berjalan`,
         slaTone: 'text-amber-500',
         slaSecondary: `Batas SLA: ${tambahMenit(slaMenit)} WIB`,
-        serial: serial.trim(),
       };
 
       tambahTiket(tiket);
@@ -302,10 +297,13 @@ export default function TicketInputPage() {
         invoice: invoiceFromTicket(kode),
         booking: terpilih ?? undefined,
         trackingCode: String(tiketDb?.tracking_code ?? terpilih?.trackingCode ?? ''),
+        tenantName: String(tiketDb?.tenant_name ?? myAccount?.tenant_name ?? '').trim() || null,
+        tenantAddress: String(tiketDb?.tenant_address ?? myAccount?.tenant_address ?? '').trim() || null,
       });
     } catch (error: any) {
       setErrorSimpan(error?.response?.data?.error || error?.message || 'Gagal menyimpan tiket. Coba lagi.');
     } finally {
+      savingLock.current = false;
       setMenyimpan(false);
     }
   };
@@ -317,7 +315,6 @@ export default function TicketInputPage() {
     setTerpilih(null);
     setKategori('laptop');
     setModel('');
-    setSerial('');
     setPin('');
     setPinRefused(false);
     setGejala([]);
@@ -326,6 +323,7 @@ export default function TicketInputPage() {
     setNama('');
     setWhatsapp('');
     setEstimasiJasa('');
+    setIdempotencyKey(null);
     setErrors({});
     setErrorSimpan('');
     setDetailId(null);
@@ -353,14 +351,6 @@ export default function TicketInputPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" className="h-auto px-3 py-2 text-xs" onClick={() => window.print()}>
-              <Printer weight="bold" className="size-3.5" /> Cetak nota
-            </Button>
-            <Button variant="outline" size="sm" className="h-auto px-3 py-2 text-xs" asChild>
-              <a href="#">
-                <WhatsappLogo weight="fill" className="size-3.5 text-emerald-600" /> Kirim nota WA
-              </a>
-            </Button>
             <Button size="sm" className="h-auto px-3 py-2 text-xs" asChild>
               <Link to="/queue">
                 <Ticket weight="fill" className="size-3.5" /> Buka di antrean
@@ -372,10 +362,10 @@ export default function TicketInputPage() {
         <div className="mx-auto w-full max-w-xl rounded-xl border border-black/10 bg-white p-6">
           <div className="flex items-start justify-between gap-4 border-b border-dashed border-stone-300 pb-4">
             <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="ServiTrack" className="size-8 object-contain" />
+              <img src="/logos.webp" alt="ServiTrack" className="size-8 object-contain" />
               <span className="min-w-0">
-                <span className="block text-sm font-bold leading-5 text-neutral-900">ServiTrack Workshop</span>
-                <span className="block text-[11px] leading-4 text-stone-500">Jl. Radio Dalam Raya No. 42, Jakarta Selatan</span>
+                <span className="block text-sm font-bold leading-5 text-neutral-900">{hasil.tenantName || 'Nama tidak diketahui'}</span>
+                <span className="block text-[11px] leading-4 text-stone-500">{hasil.tenantAddress || 'Alamat tidak tersedia'}</span>
               </span>
             </div>
             <div className="text-right">
@@ -407,10 +397,6 @@ export default function TicketInputPage() {
               <dt className="text-stone-500">Perangkat</dt>
               <dd className="text-neutral-900">{KATEGORI_LIST.find((item) => item.value === kategori)?.label} · {hasil.ticket.device}</dd>
             </div>
-            <div>
-              <dt className="text-stone-500">Nomor seri</dt>
-              <dd className="font-mono text-neutral-900">{hasil.ticket.serial}</dd>
-            </div>
             <div className="col-span-2">
               <dt className="text-stone-500">Nomor resi pelacakan</dt>
               <dd className="font-mono font-semibold text-emerald-700">{hasil.trackingCode || '�?"'}</dd>
@@ -430,7 +416,7 @@ export default function TicketInputPage() {
           <div className="border-b border-dashed border-stone-300 py-4 text-xs">
             <span className="block text-stone-500">PIN perangkat</span>
             <span className="mt-1 block font-mono text-neutral-900">
-              {pinRefused ? '— pelanggan menolak memberi PIN' : pin || '—'}
+              {pinRefused ? '- pelanggan menolak memberi PIN' : pin || '-'}
             </span>
           </div>
 
@@ -464,8 +450,7 @@ export default function TicketInputPage() {
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-[11px] leading-4 text-stone-500">
-            <QrCode weight="fill" className="size-3.5" /> Nota demo: belum tersambung gateway/WhatsApp — status
-            pengiriman dicatat manual oleh frontdesk.
+            <QrCode weight="fill" className="size-3.5" /> Notifikasi WhatsApp diproses otomatis dan status pengiriman tercatat di log notifikasi.
           </p>
         </div>
       </div>
@@ -484,9 +469,6 @@ export default function TicketInputPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-xs font-medium tabular-nums text-stone-600">
-            <Ticket weight="fill" className="size-3.5 text-stone-500" /> Kuota tiket bulan ini {kuotaTerpakai}/{kuotaBulanan}
-          </span>
           <Button variant="outline" size="sm" className="h-auto gap-1.5 px-3 py-2 text-xs font-medium text-stone-600" asChild>
             <Link to="/queue">
               <ArrowLeft weight="bold" className="size-3.5" /> Kembali ke antrean
@@ -509,7 +491,7 @@ export default function TicketInputPage() {
 
       {modeScan && step === 2 && (
         <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-4 py-3 text-xs text-sky-800">
-          <Barcode weight="bold" className="size-4" /> Mode scan aktif — pindai barcode perangkat, nomor seri terisi otomatis.
+          <Barcode weight="bold" className="size-4" /> Mode scan aktif - pindai barcode perangkat, nomor seri terisi otomatis.
         </div>
       )}
 
@@ -561,7 +543,10 @@ export default function TicketInputPage() {
               size="sm"
               className="h-11 gap-1.5 px-4 text-xs font-medium text-stone-600"
               onClick={() => {
+                setIdempotencyKey(crypto.randomUUID());
                 setTerpilih(null);
+                setPin('');
+                setPinRefused(false);
                 setErrors({});
                 setStep(2);
               }}
@@ -579,6 +564,11 @@ export default function TicketInputPage() {
               <p className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
                 <WarningCircle weight="fill" className="mt-0.5 size-4 shrink-0" />
                 {errorBooking}
+              </p>
+            )}
+            {pickupBelumSiap > 0 && (
+              <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
+                {pickupBelumSiap} booking pickup belum siap di-check-in. Perangkat harus lebih dulu dikonfirmasi tiba di workshop oleh kurir.
               </p>
             )}
             <ul className="mt-3 flex flex-col gap-2">
@@ -616,7 +606,7 @@ export default function TicketInputPage() {
                         <div>
                           <dt className="text-stone-500">Perangkat</dt>
                           <dd className="mt-0.5 font-medium text-neutral-900">
-                            {booking.device?.model || 'Belum dicatat'}
+                            {getDeviceDisplayName(booking.device?.model)}
                           </dd>
                         </div>
                         <div>
@@ -712,11 +702,7 @@ export default function TicketInputPage() {
                           </div>
                           <div>
                             <dt className="text-stone-500">Perangkat</dt>
-                            <dd className="mt-0.5 text-neutral-900">{booking.device?.model || 'Belum dicatat'}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-stone-500">Nomor seri</dt>
-                            <dd className="mt-0.5 font-mono text-neutral-900">{booking.device?.serial || '-'}</dd>
+                            <dd className="mt-0.5 text-neutral-900">{getDeviceDisplayName(booking.device?.model)}</dd>
                           </div>
                           <div className="sm:col-span-2 lg:col-span-1">
                             <dt className="text-stone-500">Keluhan</dt>
@@ -842,8 +828,9 @@ export default function TicketInputPage() {
                 <Input
                   id="model"
                   value={model}
+                  maxLength={80}
                   onChange={(event) => setModel(event.target.value)}
-                  placeholder="Contoh: Asus ROG Zephyrus / iPad Pro"
+                  placeholder="Contoh: Asus ROG Strix 16 2025"
                   className="h-11 rounded-lg border-black/10 bg-stone-50 text-sm shadow-none focus-visible:border-sky-500"
                 />
                 {errors.model && <span className="text-[11px] font-medium text-red-600">{errors.model}</span>}
@@ -851,29 +838,16 @@ export default function TicketInputPage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="serial" className="text-xs font-bold text-neutral-900">
-                    Nomor seri / IMEI <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    id="serial"
-                    ref={serialRef}
-                    value={serial}
-                    onChange={(event) => setSerial(event.target.value)}
-                    placeholder="Contoh: G14 2024 / M2"
-                    className="h-11 rounded-lg border-black/10 bg-stone-50 font-mono text-sm shadow-none focus-visible:border-sky-500"
-                  />
-                  <span className="text-[10px] leading-tight text-stone-500">
-                    Membantu otentikasi status garansi dan deteksi tiket ganda.
-                  </span>
-                  {errors.serial && <span className="text-[11px] font-medium text-red-600">{errors.serial}</span>}
-                </div>
-                <div className="flex flex-col gap-2">
                   <label htmlFor="pin" className="text-xs font-bold text-neutral-900">
-                    PIN / password <span className="text-red-500">*</span>
+                    PIN / password {!pinFromBooking && !pinRefused && <span className="text-red-500">*</span>}
                   </label>
                   <Input
                     id="pin"
+                    type="password"
                     value={pin}
+                    maxLength={128}
+                    autoComplete="off"
+                    readOnly={pinFromBooking}
                     disabled={pinRefused}
                     onChange={(event) => setPin(event.target.value)}
                     placeholder="Contoh: 123456"
@@ -883,6 +857,7 @@ export default function TicketInputPage() {
                     <input
                       type="checkbox"
                       checked={pinRefused}
+                      disabled={pinFromBooking}
                       onChange={(event) => {
                         setPinRefused(event.target.checked);
                         if (event.target.checked) setPin('');
@@ -891,6 +866,11 @@ export default function TicketInputPage() {
                     />
                     Pelanggan menolak memberi PIN (pengujian tanpa akses OS)
                   </label>
+                  {pinFromBooking && (
+                    <span className="text-[11px] text-sky-700">
+                      {pinRefused ? 'Penolakan PIN sudah tercatat pada booking.' : 'PIN sudah terisi otomatis dari booking.'}
+                    </span>
+                  )}
                   {errors.pin && <span className="text-[11px] font-medium text-red-600">{errors.pin}</span>}
                 </div>
               </div>
@@ -994,7 +974,7 @@ export default function TicketInputPage() {
                   placeholder="150000"
                   className="h-11 rounded-lg border-black/10 bg-stone-50 font-mono text-sm tabular-nums shadow-none focus-visible:border-sky-500"
                 />
-                <span className="text-[10px] text-stone-500">Opsional — biaya final lewat quotation.</span>
+                <span className="text-[10px] text-stone-500">Opsional - biaya final lewat quotation.</span>
               </div>
             </div>
           </div>
@@ -1041,10 +1021,10 @@ export default function TicketInputPage() {
                 </p>
               )}
 
-              <Button type="submit" className="mt-4 w-full" disabled={kuotaPenuh || menyimpan}>
+              <Button type="submit" className="mt-4 w-full" disabled={kuotaPenuh || menyimpan} aria-busy={menyimpan}>
                 {menyimpan ? (
                   <>
-                    <Clock weight="bold" className="size-4 animate-spin" /> Menyimpan tiket...
+                    <Clock weight="bold" className="size-4 animate-spin" /> Menyimpan…
                   </>
                 ) : (
                   <>
@@ -1053,12 +1033,9 @@ export default function TicketInputPage() {
                 )}
               </Button>
               <div className="mt-2 flex items-center justify-between gap-2">
-                <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs text-stone-600" onClick={() => setStep(1)}>
+                <Button variant="ghost" size="sm" className="h-auto w-full px-2 py-1 text-xs text-stone-600" onClick={() => setStep(1)}>
                   <ArrowLeft weight="bold" className="size-3.5" /> Kembali
                 </Button>
-                <span className="text-[11px] leading-4 text-stone-500">
-                  Tercatat oleh Andra Wijaya · frontdesk
-                </span>
               </div>
             </div>
 

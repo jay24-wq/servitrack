@@ -46,9 +46,13 @@ publicRouter.get('/track/:code', async (req, res) => {
 // POST /api/public/bookings
 publicRouter.post('/bookings', async (req, res) => {
     try {
-        const { slug, name, phone_wa, category, brand, model, serial_number, complaint, symptoms, service_method, slot_date, } = req.body ?? {};
+        const { slug, name, phone_wa, category, model, complaint, symptoms, service_method, slot_date, } = req.body ?? {};
         if (!slug || !name || !phone_wa || !service_method) {
             res.status(400).json({ error: 'slug, name, phone_wa, service_method wajib diisi' });
+            return;
+        }
+        if (typeof model !== 'string' || !model.trim() || model.trim() === '-' || model.length > 80) {
+            res.status(400).json({ error: 'Model perangkat wajib diisi (maksimal 80 karakter)' });
             return;
         }
         const tenantRes = await db.raw('SELECT resolve_tenant_by_slug(?) AS id', [slug]);
@@ -61,7 +65,6 @@ publicRouter.post('/bookings', async (req, res) => {
         const slotDate = DATE_RE.test(slot_date || '') ? slot_date : new Date().toISOString().slice(0, 10);
         const gejala = Array.isArray(symptoms) ? symptoms.join(', ') : '';
         const fullComplaint = [complaint, gejala && `Gejala: ${gejala}`].filter(Boolean).join(' | ') || 'Tanpa keluhan';
-        const brandSafe = String(brand || model || '-').slice(0, 50);
         const categorySafe = String(category || 'lainnya').slice(0, 30);
         const result = await withTenantContext(tenantId, async (trx) => {
             let branch = await trx('branches').where({ tenant_id: tenantId, is_main: true }).first();
@@ -76,19 +79,12 @@ publicRouter.post('/bookings', async (req, res) => {
             if (!customer) {
                 [customer] = await trx('customers').insert({ tenant_id: tenantId, name, phone_wa }).returning('*');
             }
-            let device = serial_number
-                ? await trx('devices').where({ tenant_id: tenantId, customer_id: customer.id, serial_number }).first()
-                : null;
-            if (!device) {
-                [device] = await trx('devices').insert({
-                    tenant_id: tenantId,
-                    customer_id: customer.id,
-                    category: categorySafe,
-                    brand: brandSafe,
-                    model: model || null,
-                    serial_number: serial_number || null,
-                }).returning('*');
-            }
+            const [device] = await trx('devices').insert({
+                tenant_id: tenantId,
+                customer_id: customer.id,
+                category: categorySafe,
+                model,
+            }).returning('*');
             let slot = await trx('booking_slots')
                 .where({ tenant_id: tenantId, branch_id: branch.id, slot_date: slotDate })
                 .forUpdate()

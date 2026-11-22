@@ -49,7 +49,8 @@ END $$;
 -- ---------------------------------------------------------------------
 -- 3. resolve_tenant_by_slug — SECURITY DEFINER
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.resolve_tenant_by_slug(p_slug text)
+DROP FUNCTION IF EXISTS public.resolve_tenant_by_slug(text);
+CREATE FUNCTION public.resolve_tenant_by_slug(p_slug text)
 RETURNS uuid
 LANGUAGE sql
 STABLE
@@ -66,7 +67,8 @@ $$;
 -- ---------------------------------------------------------------------
 -- 4. track_public — SECURITY DEFINER
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.track_public(p_code text)
+DROP FUNCTION IF EXISTS public.track_public(text);
+CREATE FUNCTION public.track_public(p_code text)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE

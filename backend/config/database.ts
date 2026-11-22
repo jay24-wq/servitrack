@@ -5,7 +5,8 @@ const base = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME || 'servitrack',
-  pool: { min: 2, max: 10 },
+  pool: { min: 2, max: process.env.NODE_ENV === 'production' ? 10 : 15 },
+  acquireConnectionTimeout: 30_000,
   migrations: {
     tableName: 'knex_migrations',
     directory: './src/models/migrations',
@@ -23,6 +24,7 @@ export const databaseConfig: Knex.Config = {
     database: base.database,
   },
   pool: base.pool,
+  acquireConnectionTimeout: base.acquireConnectionTimeout,
   migrations: base.migrations,
   seeds: base.seeds,
 };
@@ -37,6 +39,7 @@ export const migratorConfig: Knex.Config = {
     database: base.database,
   },
   pool: base.pool,
+  acquireConnectionTimeout: base.acquireConnectionTimeout,
   migrations: base.migrations,
   seeds: base.seeds,
 };

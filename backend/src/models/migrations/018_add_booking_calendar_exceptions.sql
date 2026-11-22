@@ -32,6 +32,7 @@ BEGIN
   END IF;
 END $$;
 
+DROP TRIGGER IF EXISTS trg_tenant_booking_calendar_exceptions ON booking_calendar_exceptions;
 CREATE TRIGGER trg_tenant_booking_calendar_exceptions
   BEFORE INSERT OR UPDATE ON booking_calendar_exceptions
   FOR EACH ROW EXECUTE FUNCTION public.assert_tenant_match('branch_id.branches');

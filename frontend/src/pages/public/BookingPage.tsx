@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   SealCheck,
   LockKey,
@@ -31,10 +32,11 @@ import {
 } from '@phosphor-icons/react';
 import Navbar from '../../components/Navbar';
 import { useBookingStore, type HandoverMethod } from '../../store';
-import { STORE_LOCATION, hitungOngkir, formatRupiah } from '../../lib/ongkir';
+import { hitungOngkir, formatRupiah } from '../../lib/ongkir';
 import { getDrivingRoute, type DrivingRoute } from '../../lib/routing';
 import { usePublicBooking } from '../../hooks/usePublicBooking';
-import { TENANT_SLUG } from '../../lib/api';
+import { getPublicWorkshop, TENANT_SLUG } from '../../lib/api';
+import { getDeviceDisplayName } from '../../lib/mappers';
 import PickupLocationPicker, { type PickupLocation } from '../../components/public/PickupLocationPicker';
 
 const gejalaList = [
@@ -81,6 +83,25 @@ const metodeList: { value: HandoverMethod; title: string; icon: React.ReactNode;
   },
 ];
 
+const LEGACY_PICKUP_TIMES = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+
+function pickupTimesForHours(openTime?: string | null, closeTime?: string | null) {
+  if (!openTime || !closeTime) return LEGACY_PICKUP_TIMES;
+  const toMinutes = (value: string) => {
+    const match = /^(\d{2}):(\d{2})/.exec(value);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : Number.NaN;
+  };
+  const start = toMinutes(openTime);
+  const end = toMinutes(closeTime);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return LEGACY_PICKUP_TIMES;
+
+  const times: string[] = [];
+  for (let minute = start; minute <= end; minute += 60) {
+    times.push(`${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`);
+  }
+  return times;
+}
+
 function normalisasiWhatsapp(value: string) {
   const digits = value.replace(/\D/g, '');
   if (digits.startsWith('0')) return `+62${digits.slice(1)}`;
@@ -98,7 +119,6 @@ export default function BookingPage() {
   const [nama, setNama] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [model, setModel] = useState('');
-  const [serial, setSerial] = useState('');
   const [pin, setPin] = useState('');
   const [pinRefused, setPinRefused] = useState(false);
   const [waktu, setWaktu] = useState('');
@@ -115,6 +135,11 @@ export default function BookingPage() {
   const setPreserveOnExit = useBookingStore((s) => s.setPreserveOnExit);
   const navigate = useNavigate();
   const bookingMutation = usePublicBooking();
+  const { data: workshop } = useQuery({
+    queryKey: ['public-workshop', TENANT_SLUG],
+    queryFn: () => getPublicWorkshop(TENANT_SLUG),
+    staleTime: 5 * 60_000,
+  });
 
   const ubahTanggal = () => {
     setPreserveOnExit(true);
@@ -129,6 +154,7 @@ export default function BookingPage() {
     : null;
   const jadwalLabel = dateObj?.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const bulanBadge = dateObj?.toLocaleDateString('id-ID', { month: 'short' }).replace('.', '').toUpperCase();
+  const pickupTimes = pickupTimesForHours(selectedDate?.openTime, selectedDate?.closeTime);
 
   useEffect(() => {
     if (!selectedDate) return;
@@ -160,19 +186,18 @@ export default function BookingPage() {
   const routeReady = mandiri || Boolean(drivingRoute);
 
   const step1Valid = Boolean(selectedDate);
-  const step2Valid = nama.trim().length >= 3 && waValid && (mandiri || (Boolean(waktu) && locationValid && routeReady));
+  const modelValid = model.trim() !== '' && model.trim() !== '-';
+  const step2Valid = nama.trim().length >= 3 && waValid && (mandiri ? modelValid : Boolean(waktu) && locationValid && routeReady);
   const step3Valid =
-    mandiri ||
-    (model.trim().length >= 2 &&
-      serial.trim().length >= 3 &&
+    modelValid &&
+    (mandiri || (
       gejala.length > 0 &&
       kronologi.trim().length >= 20 &&
-      (pin.trim().length >= 4 || pinRefused));
+      (pin.trim().length >= 4 || pinRefused)));
   const semuaValid = step1Valid && step2Valid && step3Valid;
 
   const punyaDataPerangkat =
     model.trim() !== '' ||
-    serial.trim() !== '' ||
     pin.trim() !== '' ||
     gejala.length > 0 ||
     kronologi.trim() !== '' ||
@@ -202,10 +227,9 @@ export default function BookingPage() {
       setKronologi('');
       setFiles([]);
       setModel('');
-      setSerial('');
       setPin('');
       setPinRefused(false);
-       setPickupLocation(null);
+      setPickupLocation(null);
     }
     setDelivery(value);
     if (value === 'mandiri' && step > 2) setStep(2);
@@ -218,8 +242,8 @@ export default function BookingPage() {
       if (nama.trim().length < 3) baru.nama = 'Nama pemilik minimal 3 karakter.';
       if (!waValid) baru.whatsapp = 'Nomor WhatsApp harus 10–15 digit.';
       if (!mandiri && !waktu) baru.waktu = 'Pilih jam penjemputan.';
-       if (!mandiri && !pickupLocation) baru.region = 'Gunakan lokasi saat ini atau pilih titik alamat di peta.';
-       else if (!mandiri && !routeReady) baru.region = 'Menghitung rute jalan, tunggu sebentar.';
+      if (!mandiri && !pickupLocation) baru.region = 'Gunakan lokasi saat ini atau pilih titik alamat di peta.';
+      else if (!mandiri && !routeReady) baru.region = 'Menghitung rute jalan, tunggu sebentar.';
     }
     setErrors(baru);
     if (Object.keys(baru).length === 0) setStep(target);
@@ -235,9 +259,8 @@ export default function BookingPage() {
     if (!mandiri && !waktu) baru.waktu = 'Pilih jam penjemputan.';
     if (!mandiri && !pickupLocation) baru.region = 'Gunakan lokasi saat ini atau pilih titik alamat di peta.';
     else if (!mandiri && !routeReady) baru.region = 'Menghitung rute jalan, tunggu sebentar.';
+    if (!modelValid) baru.model = 'Nama merk & model perangkat wajib diisi.';
     if (!mandiri) {
-      if (model.trim().length < 2) baru.model = 'Merk & model perangkat wajib diisi.';
-      if (serial.trim().length < 3) baru.serial = 'Nomor seri wajib diisi.';
       if (gejala.length === 0) baru.gejala = 'Pilih minimal satu kategori gejala.';
       if (kronologi.trim().length < 20) baru.kronologi = 'Kronologi minimal 20 karakter.';
       if (pin.trim().length < 4 && !pinRefused) baru.pin = 'Isi PIN atau centang "pelanggan menolak memberi PIN".';
@@ -255,18 +278,18 @@ export default function BookingPage() {
         name: nama.trim(),
         phone_wa: normalisasiWhatsapp(whatsapp),
         category: mandiri ? undefined : kategori,
-        brand: mandiri ? undefined : model.trim().split(' ')[0] || model.trim(),
-        model: mandiri ? undefined : model.trim(),
-        serial_number: mandiri ? undefined : serial.trim() || undefined,
+        model,
+        device_pin: mandiri || pinRefused ? undefined : pin.trim(),
+        device_pin_refused: mandiri ? undefined : pinRefused,
         complaint: mandiri ? undefined : kronologi.trim(),
         symptoms: mandiri ? undefined : gejala,
         service_method: delivery,
         slot_date: selectedDate?.iso,
         pickup_time: mandiri ? undefined : waktu,
-         pickup_address: mandiri ? undefined : pickupLocation?.address,
-         pickup_latitude: mandiri ? undefined : pickupLocation?.latitude,
-         pickup_longitude: mandiri ? undefined : pickupLocation?.longitude,
-         pickup_area: mandiri ? undefined : pickupLocation?.area,
+        pickup_address: mandiri ? undefined : pickupLocation?.address,
+        pickup_latitude: mandiri ? undefined : pickupLocation?.latitude,
+        pickup_longitude: mandiri ? undefined : pickupLocation?.longitude,
+        pickup_area: mandiri ? undefined : pickupLocation?.area,
       });
       setBookingSelesai({ trackingCode: res.tracking_code, queueNumber: res.queue_number, name: nama.trim(), method: delivery });
     } catch (err: any) {
@@ -292,26 +315,26 @@ export default function BookingPage() {
       <div className="min-h-screen bg-white">
         <Navbar />
         <main className="flex flex-col items-center pt-20 pb-16">
-          <section className="w-full max-w-3xl px-4 md:px-8 py-16 page-enter">
-            <div className="flex flex-col items-center gap-5 rounded-2xl border border-black/10 bg-white p-8 text-center shadow-sm">
+          <section className="w-full max-w-3xl px-4 md:px-8 py-8 sm:py-16 page-enter">
+            <div className="flex flex-col items-center gap-5 rounded-2xl border border-black/10 bg-white p-5 sm:p-8 text-center shadow-sm">
               <span className="flex size-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                 <SealCheck weight="fill" size={28} />
               </span>
               <div>
-                 <h1 className="text-2xl font-bold text-neutral-900">Booking Berhasil Dibuat</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Booking Berhasil Dibuat</h1>
                 <p className="mt-2 text-sm leading-relaxed text-stone-600">
                   {bookingSelesai.method === 'mandiri'
                     ? 'Simpan nomor resi ini. Tunjukkan di resepsionis (08:30-20:00 WIB) agar petugas mencatat identitas perangkat dan keluhan Anda.'
                     : 'Kurir kami akan menjemput perangkat sesuai jadwal. Nomor resi ini juga dikirim ke WhatsApp Anda.'}
                 </p>
               </div>
-              <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-6 py-4">
+              <div className="w-full sm:w-auto rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 sm:px-6 py-4">
                 <span className="block text-[11px] font-bold uppercase tracking-[0.14em] text-stone-400">
                   Nomor Resi
                 </span>
                 <span className="flex items-center justify-center gap-2">
-                  <span className="font-mono text-xl font-bold tracking-wider text-neutral-900">
-                  {bookingSelesai.trackingCode}
+                  <span className="font-mono text-lg sm:text-xl font-bold tracking-wider text-neutral-900 break-all">
+                    {bookingSelesai.trackingCode}
                   </span>
                   <button
                     type="button"
@@ -323,27 +346,27 @@ export default function BookingPage() {
                         window.setTimeout(() => setTrackingCopied(false), 1500);
                       }).catch(() => setTrackingCopied(false));
                     }}
-                    className="rounded-md p-1.5 text-stone-500 transition hover:bg-white hover:text-sky-600"
+                    className="shrink-0 rounded-md p-1.5 text-stone-500 transition hover:bg-white hover:text-sky-600"
                   >
                     {trackingCopied ? <Check size={16} weight="bold" className="text-emerald-600" /> : <Copy size={16} weight="bold" />}
                   </button>
                 </span>
               </div>
               {bookingSelesai.queueNumber && (
-                <div className="rounded-xl border border-sky-200 bg-sky-50 px-6 py-4">
+                <div className="w-full sm:w-auto rounded-xl border border-sky-200 bg-sky-50 px-4 sm:px-6 py-4">
                   <span className="block text-[11px] font-bold uppercase tracking-[0.14em] text-sky-600">Nomor Antrian</span>
                   <span className="block font-mono text-2xl font-bold tracking-wider text-sky-900">{bookingSelesai.queueNumber}</span>
                 </div>
               )}
               <Link
                 to={`/tracking?resi=${encodeURIComponent(bookingSelesai.trackingCode)}`}
-                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700"
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-sky-600 px-5 py-3 sm:py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700"
               >
                 Lacak Status Servis
               </Link>
               <dl className="grid w-full gap-3 border-t border-black/5 pt-5 text-left text-xs sm:grid-cols-2">
                 <div>
-                   <dt className="text-stone-500">Tanggal Booking</dt>
+                  <dt className="text-stone-500">Tanggal Booking</dt>
                   <dd className="font-semibold text-neutral-900">{jadwalLabel ?? '—'}</dd>
                 </div>
                 <div>
@@ -361,7 +384,7 @@ export default function BookingPage() {
                   <dd className="text-neutral-900">90 hari</dd>
                 </div>
               </dl>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <button
                   type="button"
                   onClick={() => {
@@ -373,7 +396,7 @@ export default function BookingPage() {
                 </button>
                 <Link
                   to="/"
-                  className="rounded-xl border border-stone-200 px-6 py-3 text-sm font-bold text-neutral-900 transition hover:bg-stone-50"
+                  className="rounded-xl border border-stone-200 px-6 py-3 text-center text-sm font-bold text-neutral-900 transition hover:bg-stone-50"
                 >
                   Kembali ke beranda
                 </Link>
@@ -389,21 +412,21 @@ export default function BookingPage() {
     <div className="min-h-screen bg-white">
       <Navbar />
       <main className="w-full min-h-screen pb-16 flex flex-col items-center pt-20 bg-white">
-        <section className="w-full bg-stone-100 py-8 px-4 md:px-8 border-b border-black/5 flex justify-center page-enter">
-          <div className="w-full max-w-7xl px-4 md:px-8 flex flex-col gap-6">
+        <section className="w-full bg-stone-100 py-6 sm:py-8 px-4 md:px-8 border-b border-black/5 flex justify-center page-enter">
+          <div className="w-full max-w-7xl md:px-8 flex flex-col gap-5 sm:gap-6">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <a href="/" className="text-stone-500 hover:text-stone-800 transition">Beranda</a>
               <span className="text-stone-300">/</span>
               <span className="text-stone-600 font-medium">Booking Servis</span>
             </div>
 
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-5 md:gap-6">
               <div className="flex flex-col gap-3 max-w-3xl">
-                <div className="px-3 py-1 bg-sky-100 text-sky-700 rounded-full w-max text-xs font-bold flex items-center gap-2">
-                  <span className="w-2 h-2 bg-sky-600 rounded-full animate-pulse"></span>
-                  Penerimaan Unit Terstandarisasi Lab ESD Class 100
+                <div className="px-3 py-1 bg-sky-100 text-sky-700 rounded-full w-fit max-w-full text-[11px] sm:text-xs font-bold flex items-center gap-2">
+                  <span className="w-2 h-2 shrink-0 bg-sky-600 rounded-full animate-pulse"></span>
+                  <span className="leading-snug">Penerimaan Unit Terstandarisasi Lab ESD Class 100</span>
                 </div>
-                <h1 className="text-black text-3xl md:text-5xl font-bold leading-tight">Formulir Reservasi Servis Terjadwal</h1>
+                <h1 className="text-black text-2xl sm:text-3xl md:text-5xl font-bold leading-tight">Formulir Reservasi Servis Terjadwal</h1>
                 <p className="text-stone-500 text-sm md:text-base leading-relaxed">
                   Pilih jadwal kedatangan dulu. Setelah itu lengkapi metode penyerahan dan — untuk penjemputan kurir —
                   data perangkat serta gejalanya.
@@ -425,11 +448,11 @@ export default function BookingPage() {
 
         <section className={`w-full py-3 flex justify-center border-b transition-colors ${lockActive ? 'bg-sky-100 border-sky-200' : 'bg-amber-50 border-amber-200'}`}>
           <div className="w-full max-w-7xl px-4 md:px-8 flex justify-center">
-            <div className="flex items-center gap-3 text-center sm:text-left">
+            <div className="flex items-center gap-3 text-left">
               <div className={`w-8 h-8 rounded-full shadow-sm flex justify-center items-center text-sm shrink-0 ${lockActive ? 'bg-white text-sky-600' : 'bg-amber-100 text-amber-700'}`}>
                 {lockActive ? <LockKey size={14} weight="bold" /> : <LockSimpleOpen size={14} weight="bold" />}
               </div>
-              <div className="text-sm">
+              <div className="text-xs sm:text-sm leading-relaxed">
                 {lockActive ? (
                   <>
                     <span className="text-sky-700 font-bold">Slot meja lab dikunci sementara:</span>
@@ -438,8 +461,8 @@ export default function BookingPage() {
                     <span className="text-neutral-900 font-medium">menit. Kuota aman.</span>
                   </>
                 ) : selectedDate ? (
-                  <button type="button" onClick={() => setSisaDetik(15 * 60)} className="text-amber-800 font-medium hover:underline inline-flex items-center gap-1.5">
-                    <LockKey size={14} weight="bold" /> Masa tahan slot berakhir. Klik untuk mengunci slot lagi (15 menit).
+                  <button type="button" onClick={() => setSisaDetik(15 * 60)} className="text-amber-800 font-medium hover:underline inline-flex items-center gap-1.5 text-left">
+                    <LockKey size={14} weight="bold" className="shrink-0" /> Masa tahan slot berakhir. Klik untuk mengunci slot lagi (15 menit).
                   </button>
                 ) : (
                   <span className="text-amber-800 font-medium inline-flex items-center gap-1.5">
@@ -451,15 +474,16 @@ export default function BookingPage() {
           </div>
         </section>
 
-        <section className="w-full max-w-7xl px-4 md:px-8 pt-8 relative">
-          <ol className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <section className="w-full max-w-7xl px-4 md:px-8 pt-6 sm:pt-8 relative">
+          {/* Stepper: di mobile hanya langkah aktif yang menampilkan label */}
+          <ol className="mb-5 sm:mb-6 flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-2">
             {steps.map((item, index) => {
               const selesai = item.nomor < step;
               const aktif = item.nomor === step;
               return (
                 <li key={item.nomor} className="flex items-center gap-2">
                   <span
-                    className={`flex size-7 items-center justify-center rounded-full text-xs font-bold ${
+                    className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                       selesai
                         ? 'bg-sky-600 text-white'
                         : aktif
@@ -469,43 +493,43 @@ export default function BookingPage() {
                   >
                     {selesai ? <Check weight="bold" size={13} /> : item.nomor}
                   </span>
-                  <span className={`text-xs font-semibold ${aktif ? 'text-neutral-900' : 'text-stone-500'}`}>{item.label}</span>
-                  {index < steps.length - 1 && <span className="mx-1 hidden h-px w-8 bg-stone-200 sm:block" aria-hidden="true" />}
+                  <span className={`text-xs font-semibold ${aktif ? 'text-neutral-900' : 'hidden sm:inline text-stone-500'}`}>{item.label}</span>
+                  {index < steps.length - 1 && <span className="mx-0.5 sm:mx-1 h-px w-5 sm:w-8 bg-stone-200" aria-hidden="true" />}
                 </li>
               );
             })}
           </ol>
 
-          <form onSubmit={kirimBooking} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 flex flex-col gap-8">
+          <form onSubmit={kirimBooking} className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+            <div className="lg:col-span-2 flex flex-col gap-6 lg:gap-8 min-w-0">
               {/* SECTION A: JADWAL */}
-              <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-stone-200 flex flex-col gap-6 reveal-up">
-                <div className="flex justify-between items-start md:items-center pb-4 border-b border-stone-100 gap-4">
-                  <div className="flex items-center gap-4">
+              <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-stone-200 flex flex-col gap-5 sm:gap-6 reveal-up">
+                <div className="flex justify-between items-start md:items-center pb-4 border-b border-stone-100 gap-3 sm:gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                     <div className="w-10 h-10 bg-sky-100 text-sky-700 text-lg font-bold rounded-xl flex justify-center items-center shrink-0">A</div>
-                    <div>
-                      <h2 className="text-neutral-900 text-lg font-bold">Jadwal Reservasi & Alokasi Sesi</h2>
+                    <div className="min-w-0">
+                      <h2 className="text-neutral-900 text-base sm:text-lg font-bold leading-snug">Jadwal Reservasi & Alokasi Sesi</h2>
                       <p className="text-stone-500 text-xs mt-1">Langkah 1 — pilih jendela waktu kedatangan unit di meja diagnosa awal</p>
                     </div>
                   </div>
                   {selectedDate && (
-                    <button type="button" onClick={ubahTanggal} className="text-sky-700 text-sm font-bold flex items-center gap-1.5 hover:text-sky-800 transition">
-                      <CalendarBlank weight="bold" /> <span className="hidden sm:inline">Ubah tanggal</span>
+                    <button type="button" onClick={ubahTanggal} aria-label="Ubah tanggal" className="shrink-0 p-2 sm:p-0 rounded-lg border border-stone-200 sm:border-0 text-sky-700 text-sm font-bold flex items-center gap-1.5 hover:text-sky-800 transition">
+                      <CalendarBlank weight="bold" size={18} /> <span className="hidden sm:inline">Ubah tanggal</span>
                     </button>
                   )}
                 </div>
 
                 {selectedDate ? (
                   <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
                       <div className="w-14 h-14 bg-white border border-stone-200 rounded-xl shadow-sm flex flex-col justify-center items-center shrink-0">
                         <span className="text-sky-700 text-[10px] font-bold uppercase">{bulanBadge}</span>
                         <span className="text-neutral-900 text-lg font-bold leading-tight">{dateObj?.getDate()}</span>
                       </div>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-1 min-w-0">
                         <h3 className="text-neutral-900 text-sm font-bold capitalize">{jadwalLabel}</h3>
-                        <p className="text-stone-500 text-xs flex items-center gap-1.5">
-                          <MapPin className="text-sky-600" size={14} weight="fill" /> {STORE_LOCATION.name}, {STORE_LOCATION.address}
+                        <p className="text-stone-500 text-xs flex items-start gap-1.5">
+                          <MapPin className="text-sky-600 shrink-0 mt-0.5" size={14} weight="fill" /> <span className="min-w-0">{workshop?.branch?.name || 'Cabang tidak diketahui'}, {workshop?.branch?.address || 'Alamat cabang tidak tersedia'}</span>
                         </p>
                       </div>
                     </div>
@@ -514,7 +538,7 @@ export default function BookingPage() {
                     </div>
                   </div>
                 ) : (
-                  <Link to="/kapasitas" className="p-6 border-2 border-dashed border-stone-300 rounded-xl flex flex-col items-center justify-center gap-3 text-center hover:border-sky-400 hover:bg-sky-50/50 transition group">
+                  <Link to="/kapasitas" className="p-5 sm:p-6 border-2 border-dashed border-stone-300 rounded-xl flex flex-col items-center justify-center gap-3 text-center hover:border-sky-400 hover:bg-sky-50/50 transition group">
                     <div className="w-11 h-11 bg-stone-100 group-hover:bg-white rounded-full flex justify-center items-center text-sky-600 shadow-sm transition">
                       <CalendarBlank weight="bold" size={22} />
                     </div>
@@ -528,7 +552,7 @@ export default function BookingPage() {
 
                 {errors.jadwal && (
                   <p className="flex items-center gap-1.5 text-xs font-medium text-red-600">
-                    <WarningCircle weight="fill" size={14} /> {errors.jadwal}
+                    <WarningCircle weight="fill" size={14} className="shrink-0" /> {errors.jadwal}
                   </p>
                 )}
 
@@ -555,18 +579,18 @@ export default function BookingPage() {
 
               {/* SECTION B: METODE & KONTAK */}
               {step >= 2 && (
-                <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-stone-200 flex flex-col gap-8 reveal-up">
-                  <div className="flex items-center gap-4 pb-4 border-b border-stone-100">
+                <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-stone-200 flex flex-col gap-6 sm:gap-8 reveal-up">
+                  <div className="flex items-center gap-3 sm:gap-4 pb-4 border-b border-stone-100">
                     <div className="w-10 h-10 bg-sky-100 text-sky-700 text-lg font-bold rounded-xl flex justify-center items-center shrink-0">B</div>
-                    <div>
-                      <h2 className="text-neutral-900 text-lg font-bold">Metode Penyerahan Unit & Data Kontak</h2>
+                    <div className="min-w-0">
+                      <h2 className="text-neutral-900 text-base sm:text-lg font-bold leading-snug">Metode Penyerahan Unit & Data Kontak</h2>
                       <p className="text-stone-500 text-xs mt-1">
                         Pilih penjemputan berkoper anti-statis, atau datang langsung ke counter teknisi
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
                     {metodeList.map((metode) => (
                       <label key={metode.value} className="relative cursor-pointer h-full">
                         <input
@@ -577,7 +601,7 @@ export default function BookingPage() {
                           onChange={() => pilihMetode(metode.value)}
                           className="peer sr-only"
                         />
-                        <div className={`h-full p-5 border-2 rounded-xl flex flex-col gap-3 transition ${delivery === metode.value ? 'bg-sky-50/50 border-sky-500' : 'border-stone-100 hover:border-sky-200'}`}>
+                        <div className={`h-full p-4 sm:p-5 border-2 rounded-xl flex flex-col gap-2 sm:gap-3 transition ${delivery === metode.value ? 'bg-sky-50/50 border-sky-500' : 'border-stone-100 hover:border-sky-200'}`}>
                           <h3 className="font-bold text-sm flex items-center gap-2 text-neutral-900">{metode.icon} {metode.title}</h3>
                           <p className="text-stone-500 text-xs flex-1">{metode.desc}</p>
                           <div className="pt-3 border-t border-stone-200 mt-auto">
@@ -592,8 +616,7 @@ export default function BookingPage() {
 
                   {mandiri && (
                     <div className="rounded-xl border border-sky-200 bg-sky-50/60 px-4 py-3 text-xs leading-5 text-sky-800">
-                      <span className="font-bold">Datang mandiri:</span> identitas perangkat & diagnosa tidak perlu diisi
-                      sekarang. Petugas akan mencatatnya saat Anda tiba di toko, supaya antrean tidak menumpuk.
+                      <span className="font-bold">Datang mandiri:</span> nama perangkat dicatat sekarang; petugas melengkapi diagnosa saat Anda tiba di toko.
                     </div>
                   )}
 
@@ -605,10 +628,10 @@ export default function BookingPage() {
                           id="waktu"
                           value={waktu}
                           onChange={(event) => setWaktu(event.target.value)}
-                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 transition"
                         >
                           <option value="" disabled>Masukkan waktu</option>
-                          {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'].map((time) => (
+                          {pickupTimes.map((time) => (
                             <option key={time} value={time}>{time}</option>
                           ))}
                         </select>
@@ -625,7 +648,8 @@ export default function BookingPage() {
                           value={nama}
                           onChange={(event) => setNama(event.target.value)}
                           placeholder="Sesuai kartu identitas"
-                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
+                          autoComplete="name"
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
                         />
                         {errors.nama && <span className="text-[11px] font-medium text-red-600">{errors.nama}</span>}
                       </div>
@@ -635,11 +659,13 @@ export default function BookingPage() {
                           <span className="absolute left-4 text-stone-500 text-sm font-bold">+62</span>
                           <input
                             type="tel"
+                            inputMode="tel"
                             id="whatsapp"
                             value={whatsapp}
                             onChange={(event) => setWhatsapp(event.target.value)}
                             placeholder="81234567890"
-                            className="w-full pl-12 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
+                            autoComplete="tel-national"
+                            className="w-full pl-12 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
                           />
                         </div>
                         <span className="text-[10px] text-stone-500 leading-tight">Untuk bot live telemetri status & otorisasi biaya.</span>
@@ -647,16 +673,32 @@ export default function BookingPage() {
                       </div>
                     </div>
 
-                     {!mandiri && (
-                       <div className="flex flex-col gap-5">
-                         <div className="flex flex-col gap-2">
-                           <div className="flex items-center justify-between gap-2">
-                             <label className="flex items-center gap-1.5 text-sm font-bold text-neutral-900"><MapPin className="text-sky-600" size={15} weight="fill" /> Lokasi Penjemputan <span className="text-red-500">*</span></label>
-                             {drivingRoute && <span className="hidden rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700 sm:inline-flex">{distanceKm.toFixed(1)} km via jalan</span>}
-                           </div>
-                           <p className="text-[11px] leading-tight text-stone-500">Pilih titik rumah atau lokasi penjemputan. Alamat, jarak, dan ongkir akan diperbarui otomatis.</p>
-                           <PickupLocationPicker value={pickupLocation} onChange={setPickupLocation} error={errors.region} />
-                         </div>
+                    {mandiri && (
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="model-mandiri" className="text-neutral-900 text-sm font-bold">Merk &amp; Model Lengkap <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          id="model-mandiri"
+                          value={model}
+                          maxLength={80}
+                          onChange={(event) => setModel(event.target.value)}
+                          placeholder="Contoh: Asus ROG Strix 16 2025"
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
+                        />
+                        {errors.model && <span className="text-[11px] font-medium text-red-600">{errors.model}</span>}
+                      </div>
+                    )}
+
+                    {!mandiri && (
+                      <div className="flex flex-col gap-5">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-1.5 text-sm font-bold text-neutral-900"><MapPin className="text-sky-600" size={15} weight="fill" /> Lokasi Penjemputan <span className="text-red-500">*</span></label>
+                            {drivingRoute && <span className="hidden rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700 sm:inline-flex">{distanceKm.toFixed(1)} km via jalan</span>}
+                          </div>
+                          <p className="text-[11px] leading-tight text-stone-500">Pilih titik rumah atau lokasi penjemputan. Alamat, jarak, dan ongkir akan diperbarui otomatis.</p>
+                          <PickupLocationPicker value={pickupLocation} onChange={setPickupLocation} error={errors.region} />
+                        </div>
                         <div className="flex flex-col gap-2">
                           <label htmlFor="instruksi" className="text-neutral-900 text-sm font-bold">Instruksi Khusus Kurir <span className="text-stone-400 font-normal">(Opsional)</span></label>
                           <textarea
@@ -665,14 +707,15 @@ export default function BookingPage() {
                             value={instruksi}
                             onChange={(event) => setInstruksi(event.target.value)}
                             placeholder="Misal: bertemu di lobby barat, titip security..."
-                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition resize-none"
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition resize-none"
                           />
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <div className="flex flex-col gap-2 sm:flex-row">
+                  {/* Mobile: tombol utama di atas, Kembali di bawah. Desktop: urutan semula */}
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => setStep(1)}
@@ -698,16 +741,16 @@ export default function BookingPage() {
 
               {/* SECTION C: PERANGKAT & DIAGNOSA (courier) / RINGKASAN (mandiri) */}
               {step >= 3 && (
-                <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-stone-200 flex flex-col gap-8 reveal-up">
-                  <div className="flex items-center gap-4 pb-4 border-b border-stone-100">
+                <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-stone-200 flex flex-col gap-6 sm:gap-8 reveal-up">
+                  <div className="flex items-center gap-3 sm:gap-4 pb-4 border-b border-stone-100">
                     <div className="w-10 h-10 bg-sky-100 text-sky-700 text-lg font-bold rounded-xl flex justify-center items-center shrink-0">C</div>
-                    <div>
-                      <h2 className="text-neutral-900 text-lg font-bold">
+                    <div className="min-w-0">
+                      <h2 className="text-neutral-900 text-base sm:text-lg font-bold leading-snug">
                         {mandiri ? 'Ringkasan Booking Datang Mandiri' : 'Identitas Perangkat & Diagnosa Kendala'}
                       </h2>
                       <p className="text-stone-500 text-xs mt-1">
                         {mandiri
-                          ? 'Tidak ada data perangkat yang perlu diisi — petugas mencatatnya saat Anda tiba di toko'
+                          ? 'Nama perangkat dicatat sekarang; petugas melengkapi diagnosa saat Anda tiba di toko'
                           : 'Informasi akurat membantu persiapan suku cadang presisi sebelum unit tiba'}
                       </p>
                     </div>
@@ -718,7 +761,7 @@ export default function BookingPage() {
                       <li className="flex items-start gap-3 rounded-xl border border-stone-200 bg-stone-50 p-4">
                         <Check weight="bold" className="mt-0.5 shrink-0 text-sky-600" size={16} />
                         <span className="text-stone-600">
-                          Identitas perangkat, nomor seri, PIN, dan diagnosa dicatat <span className="font-semibold text-neutral-900">langsung oleh petugas frontdesk</span> saat check-in di toko.
+                          Model perangkat sudah disimpan. PIN dan diagnosa dicatat <span className="font-semibold text-neutral-900">oleh petugas frontdesk</span> saat check-in di toko.
                         </span>
                       </li>
                       <li className="flex items-start gap-3 rounded-xl border border-stone-200 bg-stone-50 p-4">
@@ -732,11 +775,11 @@ export default function BookingPage() {
                     <>
                       <div className="flex flex-col gap-3">
                         <label className="text-neutral-900 text-sm font-bold">Kategori Perangkat <span className="text-red-500">*</span></label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                           {kategoriList.map((item) => (
                             <label key={item.value} className="relative cursor-pointer">
                               <input type="radio" name="kategori" value={item.value} checked={kategori === item.value} onChange={() => setKategori(item.value)} className="peer sr-only" />
-                              <div className={`p-4 border rounded-xl flex flex-col items-center gap-2 transition ${kategori === item.value ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
+                              <div className={`p-3 sm:p-4 border rounded-xl flex flex-col items-center gap-2 transition ${kategori === item.value ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
                                 {item.icon}
                                 <span className="text-xs font-bold text-center">{item.label}</span>
                               </div>
@@ -745,44 +788,34 @@ export default function BookingPage() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                         <div className="flex flex-col gap-2">
                           <label htmlFor="model" className="text-neutral-900 text-sm font-bold">Merk & Model Lengkap <span className="text-red-500">*</span></label>
                           <input
                             type="text"
                             id="model"
                             value={model}
+                            maxLength={80}
                             onChange={(event) => setModel(event.target.value)}
-                            placeholder="Contoh: Asus ROG Zephyrus / iPad Pro"
-                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
+                            placeholder="Contoh: Asus ROG Strix 16 2025"
+                            className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
                           />
                           {errors.model && <span className="text-[11px] font-medium text-red-600">{errors.model}</span>}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                          <div className="flex flex-col gap-2">
-                            <label htmlFor="serial" className="text-neutral-900 text-sm font-bold">Nomor Seri <span className="text-red-500">*</span></label>
-                            <input
-                              type="text"
-                              id="serial"
-                              value={serial}
-                              onChange={(event) => setSerial(event.target.value)}
-                              placeholder="Contoh: G14 2024 / M2"
-                              className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
-                            />
-                            <span className="text-[10px] text-stone-500 leading-tight">Membantu otentikasi status garansi dan suku cadang pabrikan.</span>
-                            {errors.serial && <span className="text-[11px] font-medium text-red-600">{errors.serial}</span>}
-                          </div>
+                        <div className="flex flex-col gap-2">
                           <div className="flex flex-col gap-2">
                             <label htmlFor="pin" className="text-neutral-900 text-sm font-bold">PIN / Password <span className="text-red-500">*</span></label>
                             <input
-                              type="text"
+                              type="password"
                               id="pin"
                               value={pin}
+                              maxLength={128}
+                              autoComplete="new-password"
                               onChange={(event) => setPin(event.target.value)}
                               disabled={pinRefused}
                               placeholder="Contoh: 123456"
-                              className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition disabled:text-stone-400"
+                              className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition disabled:text-stone-400"
                             />
                             <label className="flex items-start gap-2 text-[11px] text-stone-600">
                               <input
@@ -792,16 +825,16 @@ export default function BookingPage() {
                                   setPinRefused(event.target.checked);
                                   if (event.target.checked) setPin('');
                                 }}
-                                className="mt-0.5 size-3.5 accent-sky-600"
+                                className="mt-0.3 size-3.5 shrink-0 accent-sky-600"
                               />
-                              Pelanggan menolak memberi PIN (pengujian tanpa akses OS)
+                              Checklist jika tidak menggunakan password
                             </label>
                             {errors.pin && <span className="text-[11px] font-medium text-red-600">{errors.pin}</span>}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-2">
                         <label className="text-neutral-900 text-sm font-bold">Kategori Gejala & Keluhan Utama <span className="text-red-500">*</span></label>
                         <span className="text-[11px] text-stone-500 -mt-1">Boleh pilih lebih dari 1.</span>
                         <div className="flex flex-wrap gap-2">
@@ -810,7 +843,7 @@ export default function BookingPage() {
                             return (
                               <label key={item.value} className="relative cursor-pointer">
                                 <input type="checkbox" checked={aktif} onChange={() => toggleGejala(item.value)} className="peer sr-only" />
-                                <div className={`px-4 py-2 border rounded-full flex items-center gap-2 transition ${aktif ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
+                                <div className={`px-3 sm:px-4 py-2 border rounded-full flex items-center gap-2 transition ${aktif ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
                                   {item.icon}
                                   <span className="text-xs font-medium">{item.label}</span>
                                 </div>
@@ -829,11 +862,11 @@ export default function BookingPage() {
                           value={kronologi}
                           onChange={(event) => setKronologi(event.target.value.slice(0, 500))}
                           placeholder="Ceritakan riwayat kejadian: apakah terjadi setelah update OS, jatuh ringan, atau suhu mendadak melonjak? Sebutkan jika ada bau hangus..."
-                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition resize-none"
+                          className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-base sm:text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition resize-none"
                         />
-                        <div className="flex justify-between text-[10px] text-stone-400">
+                        <div className="flex justify-between gap-3 text-[10px] text-stone-400">
                           <span>Minimal 20 karakter agar teknisi menyiapkan skema yang tepat.</span>
-                          <span>{kronologi.length} / 500</span>
+                          <span className="shrink-0">{kronologi.length} / 500</span>
                         </div>
                         {errors.kronologi && <span className="text-[11px] font-medium text-red-600">{errors.kronologi}</span>}
                       </div>
@@ -842,19 +875,22 @@ export default function BookingPage() {
                         <label className="text-neutral-900 text-sm font-bold">Unggah Foto / Video Kendala <span className="text-stone-400 font-normal">(Opsional)</span></label>
                         <div className="w-full">
                           <input type="file" multiple accept="image/*,video/*" onChange={onFileChange} className="hidden" id="file-upload" />
-                          <label htmlFor="file-upload" className="w-full p-8 bg-stone-50 border-2 border-dashed border-stone-300 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-stone-100 transition cursor-pointer">
+                          <label htmlFor="file-upload" className="w-full p-6 sm:p-8 bg-stone-50 border-2 border-dashed border-stone-300 rounded-xl flex flex-col items-center justify-center gap-3 hover:bg-stone-100 transition cursor-pointer">
                             <div className="w-12 h-12 bg-white rounded-full shadow-sm flex justify-center items-center text-sky-600 text-xl"><UploadSimple weight="fill" size={24} /></div>
                             <div className="text-center">
-                              <p className="text-sm font-bold text-neutral-900">Tarik & lepas atau klik untuk unggah</p>
+                              <p className="text-sm font-bold text-neutral-900">
+                                <span className="hidden sm:inline">Tarik & lepas atau klik untuk unggah</span>
+                                <span className="sm:hidden">Ketuk untuk unggah foto / video</span>
+                              </p>
                               <p className="text-[11px] text-stone-500 mt-1">Mendukung format JPG, PNG, MP4 maks. 25MB</p>
                             </div>
                           </label>
                           {files.length > 0 && (
                             <div className="mt-4 flex flex-col gap-2">
                               {files.map((file, index) => (
-                                <div key={`${file.name}-${index}`} className="flex justify-between items-center p-2 bg-stone-50 border border-stone-200 rounded text-xs">
-                                  <span className="truncate max-w-[200px]">{file.name}</span>
-                                  <button type="button" onClick={() => removeFile(index)} className="text-red-600 font-bold">Hapus</button>
+                                <div key={`${file.name}-${index}`} className="flex justify-between items-center gap-3 p-2 bg-stone-50 border border-stone-200 rounded text-xs">
+                                  <span className="truncate min-w-0 flex-1">{file.name}</span>
+                                  <button type="button" onClick={() => removeFile(index)} className="shrink-0 px-2 py-1 text-red-600 font-bold">Hapus</button>
                                 </div>
                               ))}
                             </div>
@@ -867,7 +903,7 @@ export default function BookingPage() {
                   <button
                     type="button"
                     onClick={() => setStep(2)}
-                    className="flex w-max items-center justify-center gap-2 rounded-xl border border-stone-200 px-5 py-3 text-sm font-bold text-neutral-900 transition hover:bg-stone-50"
+                    className="flex w-full sm:w-max items-center justify-center gap-2 rounded-xl border border-stone-200 px-5 py-3 text-sm font-bold text-neutral-900 transition hover:bg-stone-50"
                   >
                     <ArrowLeft weight="bold" size={16} /> Kembali
                   </button>
@@ -876,12 +912,12 @@ export default function BookingPage() {
             </div>
 
             {/* SIDEBAR */}
-            <div className="lg:col-span-1 flex flex-col gap-6 relative">
-              <div className="sticky top-28 flex flex-col gap-6 reveal-up">
-                <div className="bg-white p-6 rounded-2xl shadow-lg shadow-black/5 border border-stone-200 flex flex-col gap-6">
-                  <div className="flex justify-between items-center pb-4 border-b border-stone-100">
+            <div className="lg:col-span-1 flex flex-col gap-6 relative min-w-0">
+              <div className="lg:sticky lg:top-28 flex flex-col gap-6 reveal-up">
+                <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-lg shadow-black/5 border border-stone-200 flex flex-col gap-5 sm:gap-6">
+                  <div className="flex justify-between items-center gap-3 pb-4 border-b border-stone-100">
                     <h3 className="text-neutral-900 text-sm font-bold">Ringkasan Reservasi Servis</h3>
-                    <span className="px-2 py-0.5 bg-sky-100 text-sky-700 text-[10px] font-bold rounded-full">Slot Diamankan</span>
+                    <span className="shrink-0 px-2 py-0.5 bg-sky-100 text-sky-700 text-[10px] font-bold rounded-full">Slot Diamankan</span>
                   </div>
 
                   <div className="p-4 bg-stone-50 rounded-xl flex items-center gap-4">
@@ -898,16 +934,16 @@ export default function BookingPage() {
                         <Laptop weight="fill" />
                       )}
                     </div>
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                       <span className="text-stone-500 text-[10px] font-bold tracking-widest uppercase mb-0.5">Unit perangkat</span>
                       {mandiri ? (
                         <>
-                          <span className="text-neutral-900 text-sm font-bold leading-tight">Diisi saat check-in</span>
-                          <span className="text-stone-500 text-[11px] mt-0.5">Petugas mencatat perangkat di toko</span>
+                          <span className="text-neutral-900 text-sm font-bold leading-tight break-words">{getDeviceDisplayName(model)}</span>
+                          <span className="text-stone-500 text-[11px] mt-0.5">Detail diagnosa saat check-in</span>
                         </>
                       ) : (
                         <>
-                          <span className="text-neutral-900 text-sm font-bold leading-tight">Unit ServiTrack Anda</span>
+                          <span className="text-neutral-900 text-sm font-bold leading-tight break-words">{getDeviceDisplayName(model)}</span>
                           <span className="text-stone-500 text-[11px] mt-0.5">
                             Kategori: {kategoriList.find((item) => item.value === kategori)?.label}
                           </span>
@@ -917,38 +953,38 @@ export default function BookingPage() {
                   </div>
 
                   <div className="flex flex-col gap-3 text-sm">
-                    <div className="flex justify-between items-start">
-                      <span className="text-stone-500">Jadwal Sesi:</span>
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="text-stone-500 shrink-0">Jadwal Sesi:</span>
                       <span className={`text-right font-bold ${selectedDate ? 'text-neutral-900' : 'text-stone-400'}`}>
                         {jadwalLabel ?? 'Belum dipilih'}
                       </span>
                     </div>
-                    <div className="flex justify-between items-start">
-                      <span className="text-stone-500">Metode Penyerahan:</span>
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="text-stone-500 shrink-0">Metode Penyerahan:</span>
                       <span className="text-neutral-900 font-medium text-right">
                         {delivery === 'antar_jemput' ? 'Antar-Jemput' : delivery === 'terjadwal' ? 'Penjemputan Terjadwal' : 'Datang Mandiri'}
                       </span>
                     </div>
-                     <div className="flex justify-between items-start">
-                        <span className="text-stone-500">Lokasi Penjemputan:</span>
-                        <span className={`max-w-[60%] text-right font-medium ${pickupLocation ? 'text-neutral-900' : 'text-stone-400'}`}>
-                          {pickupLocation ? pickupLocation.area || pickupLocation.address : mandiri ? 'Check-in di toko' : 'Belum dipilih'}
-                       </span>
-                     </div>
-                     {!mandiri && pickupLocation && (
-                       <div className="flex justify-between items-start">
-                         <span className="text-stone-500">Rute ke Lab:</span>
-                         <span className="text-right font-medium text-neutral-900">
-                           {drivingRoute ? `${distanceKm.toFixed(1)} km${drivingRoute.durationMinutes ? ` · ${drivingRoute.durationMinutes} menit` : ''}` : 'Menghitung rute...'}
-                         </span>
-                       </div>
-                     )}
-                    <div className="flex justify-between items-start">
-                      <span className="text-stone-500">Estimasi Diagnosa:</span>
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="text-stone-500 shrink-0">Lokasi Penjemputan:</span>
+                      <span className={`max-w-[60%] text-right font-medium break-words ${pickupLocation ? 'text-neutral-900' : 'text-stone-400'}`}>
+                        {pickupLocation ? pickupLocation.area || pickupLocation.address : mandiri ? 'Check-in di toko' : 'Belum dipilih'}
+                      </span>
+                    </div>
+                    {!mandiri && pickupLocation && (
+                      <div className="flex justify-between items-start gap-3">
+                        <span className="text-stone-500 shrink-0">Rute ke Lab:</span>
+                        <span className="text-right font-medium text-neutral-900">
+                          {drivingRoute ? `${distanceKm.toFixed(1)} km${drivingRoute.durationMinutes ? ` · ${drivingRoute.durationMinutes} menit` : ''}` : 'Menghitung rute...'}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="text-stone-500 shrink-0">Estimasi Diagnosa:</span>
                       <span className="text-neutral-900 font-medium text-right">120 Menit Pasca Diterima</span>
                     </div>
-                    <div className="flex justify-between items-start">
-                      <span className="text-stone-500">Jaminan Garansi:</span>
+                    <div className="flex justify-between items-start gap-3">
+                      <span className="text-stone-500 shrink-0">Jaminan Garansi:</span>
                       <span className="text-neutral-900 font-bold text-right">90 Hari Garansi Resmi</span>
                     </div>
                   </div>
@@ -956,33 +992,33 @@ export default function BookingPage() {
                   <div className="pt-4 border-t border-stone-100 flex flex-col gap-2 text-xs">
                     {!mandiri ? (
                       <>
-                        <div className="flex justify-between items-center text-stone-600">
+                        <div className="flex justify-between items-center gap-3 text-stone-600">
                           <span className="flex items-center gap-1.5">
-                             Ongkos Kirim
-                             {drivingRoute && <span className="text-stone-400">({distanceKm.toFixed(1)} km)</span>}
+                            Ongkos Kirim
+                            {drivingRoute && <span className="text-stone-400">({distanceKm.toFixed(1)} km)</span>}
                           </span>
-                          <span className="text-neutral-900 font-medium">
-                             {drivingRoute ? formatRupiah(ongkirVal) : <span className="text-stone-400 font-normal">Menghitung rute...</span>}
+                          <span className="text-neutral-900 font-medium text-right">
+                            {drivingRoute ? formatRupiah(ongkirVal) : <span className="text-stone-400 font-normal">Menghitung rute...</span>}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center text-stone-600">
+                        <div className="flex justify-between items-center gap-3 text-stone-600">
                           <span className="flex items-center gap-1.5">
                             Titik Antar
-                             {pickupLocation && <span className="text-stone-400">(dari lab)</span>}
+                            {pickupLocation && <span className="text-stone-400">(dari lab)</span>}
                           </span>
-                          <span className="text-neutral-900 font-medium text-right">{STORE_LOCATION.name}</span>
+                          <span className="text-neutral-900 font-medium text-right">{workshop?.branch?.name || 'Cabang tidak diketahui'}</span>
                         </div>
-                        <div className="flex justify-between items-center text-stone-600">
+                        <div className="flex justify-between items-center gap-3 text-stone-600">
                           <span>Hardcase Proteksi & Koper ESD</span>
-                          <span className="text-emerald-600 font-bold">GRATIS</span>
+                          <span className="text-emerald-600 font-bold shrink-0">GRATIS</span>
                         </div>
-                        <div className="flex justify-between items-center text-stone-600">
+                        <div className="flex justify-between items-center gap-3 text-stone-600">
                           <span>Asuransi Transit Elektronik</span>
-                          <span className="text-neutral-900 font-medium">Termasuk</span>
+                          <span className="text-neutral-900 font-medium shrink-0">Termasuk</span>
                         </div>
-                        <div className="flex justify-between items-baseline pt-3 mt-1 border-t border-stone-100">
+                        <div className="flex justify-between items-baseline gap-3 pt-3 mt-1 border-t border-stone-100">
                           <span className="text-neutral-900 text-sm font-bold">Estimasi Biaya Kurir</span>
-                            <span className="text-sky-600 text-lg font-bold">{drivingRoute ? formatRupiah(ongkirVal) : '—'}</span>
+                          <span className="text-sky-600 text-lg font-bold">{drivingRoute ? formatRupiah(ongkirVal) : '—'}</span>
                         </div>
                       </>
                     ) : (
@@ -1011,7 +1047,7 @@ export default function BookingPage() {
                       : mandiri
                         ? 'Konfirmasi Booking (Check-in di toko)'
                         : 'Konfirmasi & Amankan Slot Booking'}
-                    <ArrowRight weight="bold" size={16} />
+                    <ArrowRight weight="bold" size={16} className="shrink-0" />
                   </button>
                   {errors.submit && (
                     <p role="alert" className="text-xs font-medium text-red-600">
@@ -1020,7 +1056,7 @@ export default function BookingPage() {
                   )}
                 </div>
 
-                <div className="bg-stone-100 p-5 rounded-2xl flex items-start gap-4 border border-stone-200">
+                <div className="bg-stone-100 p-4 sm:p-5 rounded-2xl flex items-start gap-4 border border-stone-200">
                   <div className="w-10 h-10 bg-white rounded-full shadow-sm flex justify-center items-center text-black text-lg shrink-0">
                     <Headset weight="fill" size={20} />
                   </div>

@@ -11,9 +11,6 @@ import {
   PencilSimple,
   Trash,
   Power,
-  WhatsappLogo,
-  Check,
-  X,
   UserCircleCheck,
   Wrench,
   Headset,
@@ -35,7 +32,9 @@ import { cn } from '../../lib/utils';
 import { initialsOf } from '../../lib/avatar';
 import { createStaff, getStaff, updateStaff } from '../../lib/api';
 import { useAuthStore } from '../../store';
+import EditStaffModal from './EditStaffModal';
 import TambahStaffModal from './TambahStaffModal';
+import type { StaffRole } from './staffModalConfig';
 
 type Role = 'Admin' | 'Teknisi' | 'Front Desk' | 'Kurir';
 
@@ -44,8 +43,7 @@ interface Staff {
   name: string;
   email: string;
   role: Role;
-  whatsapp: string;
-  whatsappNote?: string;
+  phone: string;
   owner?: boolean;
   active: boolean;
   availability: 'ONLINE' | 'OFFLINE';
@@ -59,6 +57,8 @@ const ROLE_STYLE: Record<Role, string> = {
 };
 
 const ROLES: Role[] = ['Admin', 'Teknisi', 'Front Desk', 'Kurir'];
+
+const roleCode = (role: Role): StaffRole => role === 'Front Desk' ? 'frontdesk' : role.toLowerCase() as StaffRole;
 
 const SORTS = [
   { key: 'nama-asc', label: 'Nama (A-Z)' },
@@ -84,8 +84,7 @@ export default function StaffPage() {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draftWhatsapp, setDraftWhatsapp] = useState('');
+  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
 
   const roleParam = roleTab === 'Semua' ? 'all' : roleTab === 'Teknisi' ? 'technician' : roleTab === 'Front Desk' ? 'frontdesk' : roleTab.toLowerCase();
   const statusParam = statusFilter === 'Semua' ? 'all' : statusFilter === 'Aktif' ? 'active' : 'inactive';
@@ -101,7 +100,7 @@ export default function StaffPage() {
     name: member.name,
     email: member.email,
     role: roleLabels[member.role] ?? 'Front Desk',
-    whatsapp: member.phone || '',
+    phone: member.phone || '',
     active: Boolean(member.is_active),
     availability: member.courier_status === 'ONLINE' ? 'ONLINE' : 'OFFLINE',
   }));
@@ -123,13 +122,13 @@ export default function StaffPage() {
   const rows = staff;
 
   const exportCsv = () => {
-    const header = ['ID', 'Nama', 'Email', 'Peran', 'No. WhatsApp', 'Status akun'];
+    const header = ['ID', 'Nama', 'Email', 'Peran', 'No Handphone', 'Status akun'];
     const body = rows.map((member) => [
       member.id,
       member.name,
       member.email,
       member.role,
-      member.whatsapp || member.whatsappNote || 'Belum terhubung',
+      member.phone || 'Belum diatur',
       member.active ? 'Aktif' : 'Non-aktif',
     ]);
     const csv = [header, ...body].map((line) => line.join(';')).join('\n');
@@ -141,24 +140,13 @@ export default function StaffPage() {
     URL.revokeObjectURL(url);
   };
 
-  const startEdit = (member: Staff) => {
-    setEditingId(member.id);
-    setDraftWhatsapp(member.whatsapp);
-  };
-
-  const saveWhatsapp = async (id: string) => {
-    await updateStaff(id, { phone: draftWhatsapp.trim() || null });
-    setEditingId(null);
-    queryClient.invalidateQueries({ queryKey: ['staff'] });
-  };
-
   return (
     <div className="page-enter flex flex-col gap-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-2xl font-bold leading-8 tracking-tight text-neutral-900">Manajemen Pengguna</h1>
           <p className="mt-0.5 text-xs leading-5 text-stone-600">
-            Kelola hak akses role, penugasan teknisi bench, nomor kontak WhatsApp operasional, dan status akun staf
+            Kelola hak akses role, penugasan teknisi bench, nomor handphone, dan status akun staf
             workshop.
           </p>
         </div>
@@ -324,7 +312,7 @@ export default function StaffPage() {
           <div className="ledger-scroll overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-left">
               <caption className="sr-only">
-                Daftar staf workshop dengan peran, nomor WhatsApp operasional, dan status akun
+                Daftar staf workshop dengan peran, nomor handphone, dan status akun
               </caption>
               <thead>
                 <tr className="border-b border-black/5 bg-stone-50">
@@ -338,7 +326,7 @@ export default function StaffPage() {
                     Peran (role)
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
-                    No. WhatsApp operasional
+                     No Handphone
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
                      Status akun / availability
@@ -354,7 +342,6 @@ export default function StaffPage() {
                 )}
                 {rows.map((member) => {
                   const inactive = !member.active;
-                  const editing = editingId === member.id;
                   return (
                     <tr
                       key={member.id}
@@ -411,58 +398,9 @@ export default function StaffPage() {
                       </td>
 
                       <td className="px-4 py-4">
-                        {editing ? (
-                          <span className="flex items-center gap-1.5">
-                            <Input
-                              value={draftWhatsapp}
-                              onChange={(event) => setDraftWhatsapp(event.target.value)}
-                              inputMode="tel"
-                              aria-label={`Nomor WhatsApp ${member.name}`}
-                              placeholder="08xxxxxxxxxx"
-                              className="h-auto w-36 rounded-lg border-black/10 bg-white py-1 pl-2.5 pr-2 font-mono text-xs text-neutral-900 caret-sky-600 shadow-none focus-visible:border-sky-500"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Simpan nomor ${member.name}`}
-                              onClick={() => saveWhatsapp(member.id)}
-                              className="size-7 text-emerald-600 hover:bg-emerald-50"
-                            >
-                              <Check weight="bold" className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Batal mengubah ${member.name}`}
-                              onClick={() => setEditingId(null)}
-                              className="size-7 text-neutral-500 hover:bg-stone-100"
-                            >
-                              <X weight="bold" className="size-3.5" />
-                            </Button>
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                'font-mono text-xs font-normal leading-4',
-                                member.whatsapp
-                                  ? inactive
-                                    ? 'text-neutral-500'
-                                    : 'text-neutral-900'
-                                  : 'text-neutral-400'
-                              )}
-                            >
-                              {member.whatsapp || `— (${member.whatsappNote ?? 'Belum terhubung'})`}
-                            </span>
-                            {member.whatsapp ? (
-                              <WhatsappLogo
-                                weight="fill"
-                                className="size-3.5 text-emerald-600"
-                                aria-label="Nomor terhubung ke WhatsApp Business"
-                              />
-                            ) : null}
-                          </span>
-                        )}
+                        <span className={cn('font-mono text-xs font-normal leading-4', member.phone ? inactive ? 'text-neutral-500' : 'text-neutral-900' : 'text-neutral-400')}>
+                          {member.phone || 'Belum diatur'}
+                        </span>
                       </td>
 
                       <td className="px-4 py-4">
@@ -483,8 +421,8 @@ export default function StaffPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                             aria-label={`Ubah nomor WhatsApp ${member.name}`}
-                            onClick={() => startEdit(member)}
+                            aria-label={`Edit Staff ${member.name}`}
+                            onClick={() => setEditingStaff(member)}
                             className="size-8 rounded-md text-stone-600 hover:bg-stone-100"
                           >
                             <PencilSimple weight="bold" className="size-3.5" />
@@ -498,7 +436,7 @@ export default function StaffPage() {
                                title={member.id === currentUser?.id ? 'Akun sendiri tidak dapat dinonaktifkan' : 'Nonaktifkan staf'}
                                disabled={member.id === currentUser?.id}
                                onClick={async () => { if (window.confirm(`Nonaktifkan ${member.name}?`)) { await updateStaff(member.id, { is_active: false }); queryClient.invalidateQueries({ queryKey: ['staff'] }); } }}
-                              className="size-8 rounded-md text-neutral-400 hover:bg-rose-50 hover:text-rose-600"
+                              className="size-8 rounded-md text-neutral-400 hover:bg-rose-50 hover:text-rose-700"
                             >
                               <Trash weight="bold" className="size-3.5" />
                             </Button>
@@ -584,6 +522,19 @@ export default function StaffPage() {
         </div>
       </div>
       {showAddModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"><TambahStaffModal onClose={() => setShowAddModal(false)} onSubmit={async (payload) => { await createStaff(payload); setShowAddModal(false); setPage(1); queryClient.invalidateQueries({ queryKey: ['staff'] }); }} /></div>}
+      {editingStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <EditStaffModal
+            staff={{ name: editingStaff.name, email: editingStaff.email, phone: editingStaff.phone, role: roleCode(editingStaff.role) }}
+            onClose={() => setEditingStaff(null)}
+            onSubmit={async (payload) => {
+              await updateStaff(editingStaff.id, payload);
+              setEditingStaff(null);
+              queryClient.invalidateQueries({ queryKey: ['staff'] });
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

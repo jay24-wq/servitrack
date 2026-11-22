@@ -21,8 +21,8 @@ select b.tenant_id, b.id, r.id, 'Frontdesk A', 'fd@a.test', 'hash'
 insert into customers (tenant_id, name, phone_wa)
 select id, 'Pelanggan A', '628911111111' from tenants where slug = 'toko-a';
 
-insert into devices (tenant_id, customer_id, category, brand)
-select c.tenant_id, c.id, 'hp', 'Xiaomi'
+insert into devices (tenant_id, customer_id, category, model)
+select c.tenant_id, c.id, 'hp', 'Xiaomi Redmi Note 12'
   from customers c
   join tenants t on t.id = c.tenant_id
  where t.slug = 'toko-a';

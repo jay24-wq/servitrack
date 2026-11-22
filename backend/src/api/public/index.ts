@@ -10,6 +10,11 @@ import { normalizePickupArea, normalizePickupCoordinate, normalizePickupTime } f
 import { computePickupFeeFromCoordinates, computePickupFeeSnapshot } from '@utils/pickup-fee';
 import { ensureBookingSlots } from '@services/bookingSlotService';
 import { findOrCreateCustomerByPhone } from '@services/customerService';
+import { encryptSecretField } from '@utils/secretField';
+import { notifyTicketStatusChanged } from '@services/notifications/events';
+import { decideQuotation } from '@services/quotationWorkflow';
+import { hashQuotationToken } from '@utils/quotationToken';
+import { transitionQuotationPartRequests } from '@services/partRequests';
 
 export const publicRouter = Router();
 
@@ -24,6 +29,17 @@ const METHOD_MAP: Record<string, string> = {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const WITA_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Makassar' });
 const MONTH_RE = /^\d{4}-\d{2}$/;
+const QUOTATION_TOKEN_RE = /^(?:[A-F0-9]{48}|[A-F0-9]{64})$/i;
+
+async function resolveQuotationTenant(token: string): Promise<string | null> {
+  const result = await db.raw('SELECT public.resolve_tenant_by_quotation_token(?) AS id', [hashQuotationToken(token)]);
+  return result.rows?.[0]?.id ?? null;
+}
+
+function isoWeekday(date: string) {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return weekday === 0 ? 7 : weekday;
+}
 
 // GET /api/public/capacity - kapasitas booking untuk tenant dan cabang publik aktif
 publicRouter.get('/capacity', async (req: Request, res: Response) => {
@@ -59,6 +75,8 @@ publicRouter.get('/capacity', async (req: Request, res: Response) => {
       const daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
       await ensureBookingSlots(trx, tenantId, branch.id, firstDate, daysInMonth);
 
+      const hours = await trx('tenant_operating_hours').where({ tenant_id: tenantId }).select('weekday', 'open_time', 'close_time');
+      const hoursByWeekday = new Map(hours.map((day) => [Number(day.weekday), day]));
       const slots = await trx('booking_slots')
         .where({ 'booking_slots.tenant_id': tenantId, 'booking_slots.branch_id': branch.id })
         .whereBetween('booking_slots.slot_date', [firstDate, lastDate])
@@ -72,6 +90,10 @@ publicRouter.get('/capacity', async (req: Request, res: Response) => {
           'booking_calendar_exceptions.title as exception_title',
         )
         .orderBy('booking_slots.slot_date', 'asc');
+      const slotsWithHours = slots.map((slot) => {
+        const day = hoursByWeekday.get(isoWeekday(String(slot.slot_date).slice(0, 10)));
+        return { ...slot, open_time: day?.open_time ?? null, close_time: day?.close_time ?? null };
+      });
 
       const todaySlot = await trx('booking_slots')
         .where({ tenant_id: tenantId, branch_id: branch.id, slot_date: today })
@@ -90,8 +112,8 @@ publicRouter.get('/capacity', async (req: Request, res: Response) => {
         .select(trx.raw('COUNT(*) FILTER (WHERE completed_at <= estimated_done_at) AS on_time, COUNT(*) AS total'));
 
       return {
-        branch: { id: branch.id, name: branch.name },
-        slots,
+        branch: { id: branch.id, name: branch.name, address: branch.address ?? null },
+         slots: slotsWithHours,
         today: todaySlot ?? null,
         average_turnaround_days: Number(turnaround?.days || 0),
         on_time_rate: Number(sla?.total || 0) ? Number(sla.on_time || 0) / Number(sla.total) : null,
@@ -117,9 +139,151 @@ publicRouter.get('/tenant/:slug', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Toko tidak ditemukan' });
       return;
     }
-    res.json({ data: { tenant_id: id, slug: req.params.slug } });
+    const branch = await withTenantContext(id, async (trx) => {
+      const result = await trx('branches')
+        .where({ tenant_id: id, is_active: true })
+        .orderBy([{ column: 'is_main', order: 'desc' }, { column: 'created_at', order: 'asc' }])
+        .select('id', 'name', 'address')
+        .first();
+      return result ?? null;
+    });
+    res.json({ data: { tenant_id: id, slug: req.params.slug, branch } });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/public/quotations/:token - public, read-only customer approval page data
+publicRouter.get('/quotations/:token', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token ?? '');
+    if (!QUOTATION_TOKEN_RE.test(token)) {
+      res.status(400).json({ error: 'Tautan persetujuan tidak valid' });
+      return;
+    }
+    const tenantId = await resolveQuotationTenant(token);
+    if (!tenantId) {
+      res.status(404).json({ error: 'Quotation tidak ditemukan' });
+      return;
+    }
+
+    const quotation = await withTenantContext(tenantId, async (trx) => {
+      const quote = await trx('quotations as q')
+        .join('service_tickets as t', 't.id', 'q.ticket_id')
+        .join('customers as c', 'c.id', 't.customer_id')
+        .where({ 'q.tenant_id': tenantId, 'q.approval_token_hash': hashQuotationToken(token) })
+        .select(
+          'q.id', 'q.status', 'q.total_amount', 'q.expires_at', 'q.decided_at', 'q.decision_note',
+          'q.technician_diagnosis_snapshot as technician_diagnosis',
+          't.ticket_code', 't.complaint', 't.work_type',
+          'c.name as customer_name'
+        )
+        .first();
+      if (!quote) return null;
+      const devDraftPreview = process.env.NODE_ENV === 'development' && quote.status === 'draft';
+      if ((!devDraftPreview && quote.status !== 'sent') || new Date(quote.expires_at).getTime() <= Date.now()) {
+        if (quote.status === 'sent') {
+          const ticketRef = await trx('quotations').where({ id: quote.id, tenant_id: tenantId }).select('ticket_id').first();
+          await trx('quotations').where({ id: quote.id, tenant_id: tenantId, status: 'sent' }).update({ status: 'expired', decided_at: new Date(), decision_note: 'Tautan persetujuan kedaluwarsa' });
+          await transitionQuotationPartRequests(trx, {
+            tenantId, quotationId: quote.id, to: 'CANCELLED', reason: 'Quotation kedaluwarsa',
+          });
+          await trx('audit_logs').insert({
+            tenant_id: tenantId,
+            action: 'quotation.expired',
+            entity_type: 'quotation',
+            entity_id: quote.id,
+            ticket_id: ticketRef?.ticket_id ?? null,
+            quotation_id: quote.id,
+            actor_type: 'system',
+            old_values: { status: 'sent' },
+            new_values: { status: 'expired', ticket_code: quote.ticket_code },
+          });
+        }
+        return null;
+      }
+      const items = await trx('quotation_items as item')
+        .leftJoin('parts as part', 'part.id', 'item.part_id')
+        .where({ 'item.tenant_id': tenantId, 'item.quotation_id': quote.id })
+        .select(
+          'item.id', 'item.part_id', 'item.item_type', 'item.description', 'item.qty',
+          'item.unit_price', 'item.subtotal', 'item.damage_description', 'item.labor_cost', 'item.part_cost',
+          'item.part_name_snapshot', 'item.part_specification_snapshot', 'item.part_is_registered',
+          'item.availability_status', 'item.available_qty_snapshot', 'item.estimated_part_arrival_days',
+          trx.raw('COALESCE(part.name, item.part_name_snapshot) as part_name'), 'part.sku as part_sku'
+        )
+        .orderBy('item.created_at', 'asc');
+      return {
+        ...quote,
+        quotation_number: `QUO-${quote.id.slice(0, 8).toUpperCase()}`,
+        is_expired: false,
+        items,
+      };
+    });
+
+    if (!quotation) {
+      res.status(404).json({ error: 'Quotation tidak ditemukan' });
+      return;
+    }
+    res.json({ data: quotation });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Gagal memuat quotation' });
+  }
+});
+
+// POST /api/public/quotations/:token/decision - customer approves or rejects once
+publicRouter.post('/quotations/:token/decision', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.params.token ?? '');
+    const decision = req.body?.decision;
+    const note = String(req.body?.note ?? '').trim();
+    if (!QUOTATION_TOKEN_RE.test(token) || !['approve', 'reject'].includes(decision) || note.length > 500) {
+      res.status(400).json({ error: 'Pilihan persetujuan tidak valid' });
+      return;
+    }
+    const tenantId = await resolveQuotationTenant(token);
+    if (!tenantId) {
+      res.status(404).json({ error: 'Quotation tidak ditemukan' });
+      return;
+    }
+
+    const result = await withTenantContext(tenantId, (trx) => decideQuotation(trx, {
+      tenantId,
+      approvalTokenHash: hashQuotationToken(token),
+      decision: decision === 'approve' ? 'approved' : 'rejected',
+      note,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    }));
+    if (result.expired) {
+      res.status(410).json({ error: 'Tautan persetujuan quotation sudah kedaluwarsa' });
+      return;
+    }
+
+    if (result.ticket.current_status !== result.ticketStatus && result.customerPhone) {
+      const statusNotification = await notifyTicketStatusChanged({
+        tenantId,
+        customerId: result.ticket.customer_id,
+        phone: result.customerPhone,
+        ticketId: result.ticket.id,
+        trackingCode: result.ticket.tracking_code,
+        previousStatus: result.ticket.current_status,
+        status: result.ticketStatus,
+        details: result.partShortages?.map((part: any) => `${part.part_name}: kurang ${part.shortage_qty} (tersedia ${part.available_qty}/${part.required_qty})`).join('\n'),
+      });
+      await withTenantContext(tenantId, (trx) => trx('audit_logs').insert({
+        tenant_id: tenantId, action: 'ticket.status_notification', entity_type: 'service_ticket',
+        entity_id: result.ticket.id, ticket_id: result.ticket.id, quotation_id: result.quotation.id,
+        notification_id: 'id' in statusNotification ? statusNotification.id : null, actor_type: 'system',
+        new_values: { status: result.ticketStatus, notification_status: statusNotification.status, provider_message_id: 'providerMessageId' in statusNotification ? statusNotification.providerMessageId ?? null : null },
+      }));
+    }
+    const safeQuotation = { ...result.quotation };
+    delete safeQuotation.approval_token;
+    delete safeQuotation.approval_token_hash;
+    res.json({ data: { quotation: safeQuotation, ticket_status: result.ticketStatus } });
+  } catch (error: any) {
+    res.status(error.status || 500).json({ error: error.message || 'Gagal menyimpan keputusan quotation' });
   }
 });
 
@@ -143,15 +307,15 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
         const {
           slug,
           name,
-          phone_wa,
-          category,
-          brand,
-          model,
-          serial_number,
+           phone_wa,
+           category,
+           model,
           complaint,
           symptoms,
-          service_method,
-          slot_date,
+           service_method,
+           device_pin,
+           device_pin_refused,
+           slot_date,
            pickup_time,
            pickup_area,
            pickup_address,
@@ -162,12 +326,18 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
     console.debug('[Booking] POST /api/public/bookings payload', {
       ...req.body,
       phone_wa: req.body?.phone_wa ? '[redacted]' : undefined,
+      device_pin: req.body?.device_pin ? '[redacted]' : undefined,
     });
 
     const customerName = String(name || '').trim();
     if (!slug || !customerName || !phone_wa || !service_method) {
       console.warn('[Booking] request validation failed', { slug: Boolean(slug), name: Boolean(name), phone_wa: Boolean(phone_wa), service_method });
       res.status(400).json({ error: 'slug, name, phone_wa, service_method wajib diisi' });
+      return;
+    }
+
+    if (typeof model !== 'string' || !model.trim() || model.trim() === '-' || model.length > 80) {
+      res.status(400).json({ error: 'Model perangkat wajib diisi (maksimal 80 karakter)' });
       return;
     }
 
@@ -179,14 +349,27 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
     }
 
     const method = METHOD_MAP[service_method] ?? 'dropoff';
+    if (device_pin !== undefined && typeof device_pin !== 'string') {
+      throw Object.assign(new Error('PIN / password tidak valid'), { status: 400 });
+    }
+    const devicePin = typeof device_pin === 'string' ? device_pin.trim() : '';
+    const pinRefused = device_pin_refused === true;
+    if (device_pin_refused !== undefined && typeof device_pin_refused !== 'boolean') {
+      throw Object.assign(new Error('Pilihan PIN tidak valid'), { status: 400 });
+    }
+    if (devicePin.length > 128 || (method !== 'dropoff' && (
+      (pinRefused && devicePin) ||
+      (!pinRefused && (devicePin.length < 4 || devicePin.length > 128))
+    ))) {
+      throw Object.assign(new Error('Isi PIN / password atau pilih pelanggan menolak memberi PIN'), { status: 400 });
+    }
       const slotDate = DATE_RE.test(slot_date || '') ? slot_date : WITA_DATE.format(new Date());
     const todayDate = new Date(`${WITA_DATE.format(new Date())}T00:00:00Z`);
     const bookingEndDate = new Date(todayDate);
     bookingEndDate.setUTCDate(bookingEndDate.getUTCDate() + 5);
     const bookingEnd = bookingEndDate.toISOString().slice(0, 10);
-    const slotWeekday = new Date(`${slotDate}T00:00:00Z`).getUTCDay();
-    if (slotDate < WITA_DATE.format(new Date()) || slotDate > bookingEnd || slotWeekday === 0) {
-      throw Object.assign(new Error('Tanggal booking hanya tersedia dari hari ini sampai 5 hari ke depan, kecuali Minggu'), { status: 400 });
+    if (slotDate < WITA_DATE.format(new Date()) || slotDate > bookingEnd) {
+      throw Object.assign(new Error('Tanggal booking hanya tersedia dari hari ini sampai 5 hari ke depan'), { status: 400 });
     }
     const pickupTimeSafe = normalizePickupTime(pickup_time);
     const pickupAreaSafe = normalizePickupArea(pickup_area);
@@ -202,7 +385,6 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
     const gejala = Array.isArray(symptoms) ? symptoms.join(', ') : '';
     const fullComplaint =
       [complaint, gejala && `Gejala: ${gejala}`].filter(Boolean).join(' | ') || 'Tanpa keluhan';
-    const brandSafe = String(brand || model || '-').slice(0, 50);
     const categorySafe = String(category || 'lainnya').slice(0, 30);
 
     const result = await withTenantContext(tenantId, async (trx) => {
@@ -218,19 +400,12 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
 
       const customer = await findOrCreateCustomerByPhone(trx, tenantId, customerName, phone_wa);
 
-      let device = serial_number
-        ? await trx('devices').where({ tenant_id: tenantId, customer_id: customer.id, serial_number }).first()
-        : null;
-      if (!device) {
-        [device] = await trx('devices').insert({
-          tenant_id: tenantId,
-          customer_id: customer.id,
-          category: categorySafe,
-          brand: brandSafe,
-          model: model || null,
-          serial_number: serial_number || null,
-        }).returning('*');
-      }
+      const [device] = await trx('devices').insert({
+        tenant_id: tenantId,
+        customer_id: customer.id,
+        category: categorySafe,
+        model,
+      }).returning('*');
 
       let slot = await trx('booking_slots')
         .where({ tenant_id: tenantId, branch_id: branch.id, slot_date: slotDate })
@@ -243,6 +418,19 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
       if (slot.booked_count >= slot.capacity)
         throw Object.assign(new Error('Kuota slot harian penuh'), { status: 409 });
 
+      if (method !== 'dropoff') {
+        const weekday = isoWeekday(String(slot.slot_date).slice(0, 10));
+        const hours = await trx('tenant_operating_hours').where({ tenant_id: tenantId, weekday }).first();
+        if (hours) {
+          const openTime = String(hours.open_time ?? '').slice(0, 5);
+          const closeTime = String(hours.close_time ?? '').slice(0, 5);
+          const selectedTime = String(pickupTimeSafe ?? '').slice(0, 5);
+          if (!/^\d{2}:\d{2}$/.test(selectedTime) || selectedTime < openTime || selectedTime > closeTime) {
+            throw Object.assign(new Error('Waktu penjemputan harus berada dalam jam operasional workshop'), { status: 400 });
+          }
+        }
+      }
+
       console.debug('[Booking] slot resolved', {
         slot_id: slot.id,
         slot_date: slot.slot_date,
@@ -253,6 +441,8 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
       const queueNumber = method === 'dropoff'
         ? await nextDropoffQueueNumber(trx, branch.id, slot.id)
         : null;
+      const tenant = await trx('tenants').where({ id: tenantId }).select('tracking_prefix').first();
+      if (!tenant) throw Object.assign(new Error('Tenant tidak ditemukan'), { status: 404 });
 
       const [booking] = await trx('bookings')
         .insert({
@@ -264,10 +454,12 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
           customer_phone: phone_wa,
           device_id: device.id,
           booking_code: generateBookingCode(),
-          tracking_code: generateTrackingCode(),
+          tracking_code: generateTrackingCode(tenant.tracking_prefix),
           queue_number: queueNumber,
-          service_method: method,
-          complaint: fullComplaint,
+           service_method: method,
+           device_pin_enc: method !== 'dropoff' && !pinRefused ? encryptSecretField(devicePin) : null,
+           device_pin_refused: method !== 'dropoff' && pinRefused,
+           complaint: fullComplaint,
           pickup_time: pickupTimeSafe,
            pickup_area: pickupAreaSafe,
            pickup_address: pickupAddressSafe,
@@ -341,6 +533,7 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
     void notifyBookingCreated({
       tenantId,
       customerId: result.booking.customer_id,
+      bookingId: result.booking.id,
       phone: result.customerPhone,
       serviceMethod: result.booking.service_method,
       trackingCode: result.booking.tracking_code,

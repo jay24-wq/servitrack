@@ -57,8 +57,8 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
 
     const lowStockRow = await dbq('parts')
       .where({ tenant_id, branch_id: branch })
-      .whereRaw('stock_qty <= min_stock_qty')
-      .select('name', 'stock_qty as remaining', 'min_stock_qty as min')
+      .whereRaw('stock_qty <= min_stock')
+      .select('name', 'stock_qty as remaining', 'min_stock as min')
       .orderBy('stock_qty', 'asc')
       .first();
 
@@ -66,15 +66,16 @@ dashboardRouter.get('/', async (req: AuthRequest, res: Response) => {
       ? { name: lowStockRow.name, remaining: Number(lowStockRow.remaining), min: Number(lowStockRow.min) }
       : null;
 
-    const technicians = await dbq('users')
-      .where({ tenant_id, branch_id: branch, role: 'teknisi', is_active: true })
-      .select('id', 'name');
+    const technicians = await dbq('users as u')
+      .join('roles as r', 'u.role_id', 'r.id')
+      .where({ 'u.tenant_id': tenant_id, 'u.branch_id': branch, 'r.code': 'teknisi', 'u.is_active': true })
+      .select('u.id', 'u.name');
 
     const bench = [];
     for (const t of technicians.slice(0, 3)) {
       const [agg] = await dbq('service_tickets')
         .where({ tenant_id, branch_id: branch, technician_id: t.id })
-        .whereIn('current_status', ['antrian', 'pengecekan', 'menunggu_part', 'pengerjaan', 'quality_check'])
+        .whereIn('current_status', ['antrian', 'pengecekan', 'menunggu_part', 'menunggu_persetujuan', 'pengerjaan', 'quality_check'])
         .count('* as c');
       bench.push({ name: t.name, status: Number(agg?.c) > 3 ? 'bg-amber-400' : 'bg-emerald-500' });
     }

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest, withTenantContext } from '@middleware/AuthMiddleware';
 import { tenantResolver } from '@middleware/TenantResolver';
+import { logAudit } from '@services/auditLog';
 
 export const notesRouter = Router();
 
@@ -19,7 +20,7 @@ notesRouter.post('/:id/notes', async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { note_type, content } = req.body;
 
-    if (!note_type || !content) {
+    if (!note_type || typeof content !== 'string' || !content.trim() || content.length > 4000) {
       res.status(400).json({ error: 'note_type dan content wajib diisi' });
       return;
     }
@@ -31,7 +32,7 @@ notesRouter.post('/:id/notes', async (req: AuthRequest, res: Response) => {
     }
 
     const result = await withTenantContext(tenant_id, async (trx) => {
-      const ticket = await trx('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).first();
+      const ticket = await trx('service_tickets').where({ id, tenant_id, branch_id: req.user?.branch_id }).forUpdate().first();
       if (!ticket) {
         throw new Error('Tiket tidak ditemukan');
       }
@@ -41,8 +42,16 @@ notesRouter.post('/:id/notes', async (req: AuthRequest, res: Response) => {
         ticket_id: id,
         author_id: req.user?.user_id,
         note_type,
-        content,
+        content: content.trim(),
       }).returning('*');
+
+      await logAudit(trx, req, {
+        action: 'ticket.work_note_added',
+        entityType: 'service_ticket',
+        entityId: id,
+        newValues: { ticket_code: ticket.ticket_code, note_id: note.id, note_type, content: note.content },
+        note: note.content,
+      });
 
       return note;
     });

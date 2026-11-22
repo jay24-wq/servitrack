@@ -1,6 +1,4 @@
 const STORE_LOCATION = {
-  name: 'Lab ServiTrack Denpasar',
-  address: 'Jl. Teuku Umar No. 123, Dauh Puri Kauh, Denpasar, Bali',
   lat: -8.6705,
   lng: 115.2126,
 } as const;

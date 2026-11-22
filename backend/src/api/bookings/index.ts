@@ -8,6 +8,7 @@ import { logBookingEvent } from '@repositories/bookingTimelineRepo';
 import { nextDropoffQueueNumber } from '@services/bookingQueueService';
 import { notifyBookingCreated } from '@services/notifications/events';
 import { ensureBookingSlots } from '@services/bookingSlotService';
+import { decryptSecretField, encryptSecretField } from '@utils/secretField';
 
 export const bookingRouter = Router();
 
@@ -30,16 +31,37 @@ bookingRouter.get('/', async (req: AuthRequest, res: Response) => {
         query.raw('COALESCE(bookings.customer_name, customers.name) as customer_name'),
         query.raw('COALESCE(bookings.customer_phone, customers.phone_wa) as phone_wa'),
         'devices.category as device_category',
-        'devices.brand as device_brand',
         'devices.model as device_model',
-        'devices.serial_number as device_serial',
         'booking_slots.slot_date',
         'bookings.pickup_time',
         'bookings.pickup_area',
-        'bookings.pickup_fee'
+        'bookings.pickup_fee',
+        query.raw(`(
+          SELECT ca.status
+          FROM courier_assignments ca
+          WHERE ca.tenant_id = bookings.tenant_id
+            AND ca.branch_id = bookings.branch_id
+            AND ca.booking_id = bookings.id
+            AND ca.assignment_type = 'pickup'
+          ORDER BY ca.assigned_at DESC
+          LIMIT 1
+        ) as courier_pickup_status`)
       )
       .orderBy('bookings.created_at', 'desc');
-    res.json({ data: bookings });
+    const canReadDevicePin = ['admin', 'frontdesk'].includes(req.user?.role?.toLowerCase() ?? '');
+    const data = bookings.map((booking: any) => {
+      const safeBooking = { ...booking };
+      const encryptedPin = safeBooking.device_pin_enc;
+      const pinRefused = Boolean(safeBooking.device_pin_refused);
+      delete safeBooking.device_pin_enc;
+      delete safeBooking.device_pin_refused;
+      if (canReadDevicePin) {
+        safeBooking.device_pin = decryptSecretField(encryptedPin);
+        safeBooking.device_pin_refused = pinRefused;
+      }
+      return safeBooking;
+    });
+    res.json({ data });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Gagal mengambil data booking' });
   }
@@ -54,7 +76,7 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const { customer_id, device_id, slot_id, service_method, complaint } = req.body;
+    const { customer_id, device_id, slot_id, service_method, complaint, device_pin, device_pin_refused } = req.body;
     const branch_id = req.user?.branch_id;
 
     if (!branch_id || !customer_id || !device_id || !slot_id || !service_method) {
@@ -62,7 +84,26 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const pin = typeof device_pin === 'string' ? device_pin.trim() : '';
+    const pickupBooking = service_method !== 'dropoff';
+    const pinRefused = pickupBooking && device_pin_refused === true;
+    if ((device_pin !== undefined && typeof device_pin !== 'string') ||
+      (device_pin_refused !== undefined && typeof device_pin_refused !== 'boolean') ||
+      pin.length > 128 || (pin && pin.length < 4) || (pinRefused && pin)) {
+      res.status(400).json({ error: 'Data PIN atau pilihan penolakan tidak valid' });
+      return;
+    }
+
     const result = await withTenantContext(tenant_id, async (trx) => {
+      const device = await trx('devices')
+        .where({ id: device_id, tenant_id, customer_id })
+        .select('model')
+        .first();
+      if (!device) throw Object.assign(new Error('Perangkat tidak ditemukan'), { status: 404 });
+      if (typeof device.model !== 'string' || !device.model.trim() || device.model.trim() === '-') {
+        throw Object.assign(new Error('Model perangkat wajib diisi'), { status: 400 });
+      }
+
       await ensureBookingSlots(trx, tenant_id, branch_id);
 
       // Cek ketersediaan slot
@@ -87,6 +128,9 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
         .first();
       if (!customer) throw Object.assign(new Error('Customer tidak ditemukan'), { status: 404 });
 
+      const tenant = await trx('tenants').where({ id: tenant_id }).select('tracking_prefix').first();
+      if (!tenant) throw Object.assign(new Error('Tenant tidak ditemukan'), { status: 404 });
+
       const queueNumber = service_method === 'dropoff'
         ? await nextDropoffQueueNumber(trx, branch_id, slot.id)
         : null;
@@ -102,10 +146,12 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
            customer_phone: customer.phone_wa,
            device_id,
           booking_code: generateBookingCode(),
-          tracking_code: generateTrackingCode(),
-          queue_number: queueNumber,
-          service_method,
-          complaint: complaint || '',
+           tracking_code: generateTrackingCode(tenant.tracking_prefix),
+           queue_number: queueNumber,
+           service_method,
+            device_pin_enc: pickupBooking && pin && !pinRefused ? encryptSecretField(pin) : null,
+            device_pin_refused: pickupBooking && pinRefused,
+           complaint: complaint || '',
           pickup_time: null,
           pickup_area: null,
           pickup_fee: computePickupFeeSnapshot(service_method, null),
@@ -168,6 +214,7 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
     void notifyBookingCreated({
       tenantId: tenant_id,
       customerId: result.booking.customer_id,
+      bookingId: result.booking.id,
       phone: result.customerPhone,
       serviceMethod: result.booking.service_method,
       trackingCode: result.booking.tracking_code,
@@ -175,9 +222,12 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
       bookingDate: result.slotDate,
     });
 
-    res.status(201).json({ message: 'Booking berhasil dibuat', data: result.booking });
+    const bookingData = { ...result.booking };
+    delete bookingData.device_pin_enc;
+    delete bookingData.device_pin_refused;
+    res.status(201).json({ message: 'Booking berhasil dibuat', data: bookingData });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Gagal membuat booking' });
+    res.status(error.status || 500).json({ error: error.message || 'Gagal membuat booking' });
   }
 });
 

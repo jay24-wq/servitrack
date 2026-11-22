@@ -7,7 +7,6 @@ export interface Ticket {
   booking_id?: string;
   status: TicketStatus;
   status_label: string;
-  serial_number?: string;
   warranty_expired: boolean;
   created_at: string;
   updated_at: string;
@@ -18,10 +17,12 @@ export type TicketStatus =
   | 'ANTRIAN'
   | 'PENGECEKAN'
   | 'MENUNGGU_PART'
+  | 'MENUNGGU_PERSETUJUAN'
   | 'PENGGERJAAN'
   | 'QUALITY_CHECK'
   | 'SELESAI'
-  | 'SIAP_DIAMBIL';
+  | 'SIAP_DIAMBIL'
+  | 'BATAL';
 
 export interface User {
   id: string;

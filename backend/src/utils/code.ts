@@ -18,11 +18,13 @@ export function generateTicketCode(): string {
 }
 
 /**
- * Nomor resi customer: `SRV` + 10 digit acak.
+ * Nomor resi customer: prefix tenant + 10 digit acak.
  * Dibuat sekali saat booking dan tidak berubah sampai servis selesai.
  */
-export function generateTrackingCode(): string {
-  return `SRV${randomDigits(10)}`;
+export function generateTrackingCode(prefix: string): string {
+  const normalizedPrefix = prefix.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalizedPrefix)) throw new Error('Prefix tracking harus terdiri dari 3 huruf A-Z');
+  return `${normalizedPrefix}${randomDigits(10)}`;
 }
 
 export function generateTrackingToken(): string {

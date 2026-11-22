@@ -35,6 +35,7 @@ import {
   type HistoryEndStatus,
   type ServiceHistory,
 } from '../../data/serviceHistory';
+import { getDeviceDisplayName } from '../../lib/mappers';
 
 type RangeKey = 'today' | 'week' | 'month' | 'custom';
 
@@ -110,7 +111,7 @@ export default function TechnicianHistoryPage() {
       if (status !== 'Semua' && entry.endStatus !== status) return false;
 
       if (keyword) {
-        const haystack = `${entry.id} ${entry.customer} ${entry.serial} ${entry.device}`.toLowerCase();
+        const haystack = `${entry.id} ${entry.customer} ${entry.model}`.toLowerCase();
         if (!haystack.includes(keyword)) return false;
       }
       return true;
@@ -236,8 +237,8 @@ export default function TechnicianHistoryPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              aria-label="Cari riwayat berdasarkan kode tiket, nama pelanggan, atau serial number"
-              placeholder="Cari kode tiket / pelanggan / S/N..."
+              aria-label="Cari riwayat berdasarkan kode tiket, nama pelanggan, atau model perangkat"
+              placeholder="Cari kode tiket / pelanggan / model perangkat..."
               className="h-auto rounded-lg border-black/10 bg-stone-100 py-2 pl-9 pr-3 text-xs text-zinc-900 caret-sky-600 shadow-none placeholder:text-neutral-500 focus-visible:border-sky-500"
             />
           </div>
@@ -277,8 +278,7 @@ export default function TechnicianHistoryPage() {
                   </td>
                   <td className="px-4 py-4">
                     <span className="block font-mono text-xs font-semibold text-sky-600">{entry.id}</span>
-                    <span className="mt-0.5 block text-xs font-semibold text-zinc-900">{entry.device}</span>
-                    <span className="block font-mono text-[10px] text-stone-400">S/N: {entry.serial}</span>
+                    <span className="mt-0.5 block text-xs font-semibold text-zinc-900">{getDeviceDisplayName(entry.model)}</span>
                     <span
                       className={cn(
                         'mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold outline outline-1',
@@ -384,9 +384,9 @@ function HistoryDetailSheet({ entry, onOpenChange, now }: DetailProps) {
             </span>
             <span className="font-mono text-xs font-bold text-sky-600">{entry.id}</span>
           </div>
-          <SheetTitle className="text-xl font-bold text-zinc-900">{entry.device}</SheetTitle>
+          <SheetTitle className="text-xl font-bold text-zinc-900">{getDeviceDisplayName(entry.model)}</SheetTitle>
           <SheetDescription className="text-sm text-stone-500">
-            {entry.customer} · S/N: {entry.serial} · Selesai {fmtDate(done)}
+            {entry.customer} · Selesai {fmtDate(done)}
           </SheetDescription>
         </SheetHeader>
 

@@ -3,7 +3,7 @@ import { ArrowRight, CalendarBlank } from '@phosphor-icons/react';
 
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import type { BookingRow } from '../../lib/mappers';
+import { getDeviceDisplayName, type BookingRow } from '../../lib/mappers';
 
 interface BookingSummaryCardProps {
   bookings: BookingRow[];
@@ -44,7 +44,7 @@ export function BookingSummaryCard({ bookings, isLoading }: BookingSummaryCardPr
               </div>
               <div className="min-w-0 text-left sm:text-right">
                 <span className="block truncate text-xs font-medium text-neutral-900">
-                  {booking.device?.model || 'Perangkat belum dicatat'}
+                  {getDeviceDisplayName(booking.device?.model)}
                 </span>
                 <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-stone-500 sm:justify-end">
                   <CalendarBlank weight="bold" className="size-3.5 text-stone-400" />

@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '@models/index';
 import { appConfig } from '@config/app';
+import { branchIdForUser } from './branchAccess';
 
 export interface UserPayload {
   user_id: string;
@@ -57,13 +58,24 @@ export async function branchResolver(req: AuthRequest, res: Response, next: Next
     }
 
     const query = req.db ?? db;
-    const user = await query('users').where({ id: user_id, tenant_id, is_active: true }).select('branch_id').first();
-    if (!user?.branch_id) {
+    const user = await query('users')
+      .join('roles', 'roles.id', 'users.role_id')
+      .where({ 'users.id': user_id, 'users.tenant_id': tenant_id, 'users.is_active': true })
+      .whereNull('users.deleted_at')
+      .select('users.branch_id', 'roles.code as role')
+      .first();
+    if (!user) {
+      res.status(403).json({ error: 'Pengguna tidak aktif atau tidak valid' });
+      return;
+    }
+
+    const branchId = branchIdForUser(user.role, user.branch_id, req.get('x-branch-id'));
+    if (!branchId) {
       res.status(403).json({ error: 'Pengguna belum memiliki cabang yang terotorisasi' });
       return;
     }
 
-    const branch = await query('branches').where({ id: user.branch_id, tenant_id, is_active: true }).first();
+    const branch = await query('branches').where({ id: branchId, tenant_id, is_active: true }).first();
     if (!branch) {
       res.status(403).json({ error: 'Cabang pengguna tidak aktif atau tidak valid' });
       return;

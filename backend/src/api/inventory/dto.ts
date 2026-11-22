@@ -10,6 +10,7 @@ export interface CreatePartDto {
   cost_price?: number;
   sell_price?: number;
   bin_location?: string | null;
+  part_request_id?: string;
 }
 
 export interface StockInDto {

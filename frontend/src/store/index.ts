@@ -1,8 +1,8 @@
 // Frontend Zustand stores
 export * from './authStore';
+export * from './branchStore';
 export * from './bookingStore';
 export * from './ticketStore';
-export * from './tenantStore';
 export * from './uiStore';
 
 /** Metode serah-terima unit (booking) */

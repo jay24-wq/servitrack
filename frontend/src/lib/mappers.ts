@@ -2,6 +2,9 @@ import type { HandoverMethod } from '../store';
 import type { QueueStatus, QueueTicket } from '../store/ticketStore';
 import type { BookingSlot, ActiveTicket } from '../data/frontdesk';
 import { formatBookingSchedule, formatPickupTime } from './booking-schedule';
+import { getDeviceDisplayName } from '../../../common/utils/device';
+
+export { getDeviceDisplayName } from '../../../common/utils/device';
 
 /** Map DB current_status values → UI Status labels */
 export const DB_STATUS_MAP: Record<string, QueueStatus> = {
@@ -9,9 +12,11 @@ export const DB_STATUS_MAP: Record<string, QueueStatus> = {
   pengecekan: 'Pengecekan',
   pengerjaan: 'Pengerjaan',
   menunggu_part: 'Menunggu Part',
+  menunggu_persetujuan: 'Menunggu Persetujuan',
   quality_check: 'Quality Control',
   selesai: 'Selesai',
-  siap_diambil: 'Selesai',
+  siap_diambil: 'Siap Diambil',
+  batal: 'Dibatalkan',
 };
 
 /** Reverse map: label UI → nilai current_status di DB (untuk PUT status dari kanban) */
@@ -20,8 +25,11 @@ export const STATUS_TO_DB: Record<QueueStatus, string> = {
   Pengecekan: 'pengecekan',
   Pengerjaan: 'pengerjaan',
   'Menunggu Part': 'menunggu_part',
+  'Menunggu Persetujuan': 'menunggu_persetujuan',
   'Quality Control': 'quality_check',
   Selesai: 'selesai',
+  'Siap Diambil': 'siap_diambil',
+  Dibatalkan: 'batal',
 };
 
 const METHOD_LABEL: Record<string, HandoverMethod> = {
@@ -70,16 +78,27 @@ export interface ServiceTicketRow {
   id?: string;
   ticket_code: string;
   current_status: string;
+  device_pin?: string | null;
+  device_pin_refused?: boolean;
+  work_type?: 'without_parts' | 'with_parts' | null;
+  diagnosis_status?: 'matches_complaint' | 'additional_damage' | null;
+  technician_diagnosis?: string | null;
+  additional_damage?: string | null;
+  requested_part_id?: string | null;
+  requested_part_qty?: number | string | null;
+  part_shortages?: Array<{
+    part_id: string; part_name: string; required_qty: number; available_qty: number; shortage_qty: number;
+    part_request_id?: string | null; part_request_status?: string; estimated_arrival_days?: number | null;
+  }> | null;
   complaint: string;
   service_method: string;
   created_at: string;
   tracking_code?: string | null;
   estimated_done_at?: string | null;
   completed_at?: string | null;
-  serial_number?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
-  device_label?: string | null;
+  device_model?: string | null;
   technician_name?: string | null;
   technician_initials?: string | null;
   [key: string]: unknown;
@@ -91,20 +110,29 @@ export function mapServiceTicketToQueueTicket(t: ServiceTicketRow): QueueTicket 
   const status = DB_STATUS_MAP[t.current_status] ?? 'Antrian';
   const dibuat = new Date(t.created_at);
   const batas = t.estimated_done_at ? new Date(t.estimated_done_at) : new Date(dibuat.getTime() + SLA_DEFAULT_MENIT * 60_000);
-  const lewat = !Number.isNaN(dibuat.getTime()) && Date.now() > batas.getTime() && status !== 'Selesai';
+  const lewat = !Number.isNaN(dibuat.getTime()) && Date.now() > batas.getTime() && status !== 'Selesai' && status !== 'Siap Diambil';
 
   return {
     id: t.ticket_code,
+    recordId: t.id,
     time: formatTanggal(t.created_at),
     customer: t.customer_name ?? '—',
     phone: digits(t.customer_phone),
     handover: METHOD_HANDOVER[mapServiceMethod(t.service_method)],
-    device: t.device_label ?? '—',
+    device: getDeviceDisplayName(t.device_model),
+    devicePin: t.device_pin ?? null,
+    pinRefused: Boolean(t.device_pin_refused),
+    workType: t.work_type ?? null,
+    diagnosisStatus: t.diagnosis_status ?? null,
+    technicianDiagnosis: t.technician_diagnosis ?? null,
+    additionalDamage: t.additional_damage ?? null,
+    requestedPartId: t.requested_part_id ?? null,
+    requestedPartQty: t.requested_part_qty === null || t.requested_part_qty === undefined ? null : Number(t.requested_part_qty),
+    partShortages: t.part_shortages ?? [],
     diagnosis: t.complaint ?? '',
     technician: t.technician_name ?? 'Belum ditugaskan',
     technicianInitials: t.technician_initials ?? '?',
     status,
-    serial: t.serial_number ?? undefined,
     slaPrimary: t.estimated_done_at
       ? `SLA: ${formatTanggal(t.estimated_done_at, { dateStyle: 'short', timeStyle: 'short' })}`
       : 'SLA: Belum ditentukan',
@@ -128,28 +156,27 @@ export interface BookingApiRow {
   complaint?: string | null;
   device_id?: string | null;
   device_category?: string | null;
-  device_brand?: string | null;
   device_model?: string | null;
-  device_serial?: string | null;
+  device_pin?: string | null;
+  device_pin_refused?: boolean | null;
   status?: string | null;
   branch_id?: string | null;
   customer_id?: string | null;
   pickup_time?: string | null;
   pickup_area?: string | null;
   pickup_fee?: number | string | null;
+  courier_pickup_status?: string | null;
   [key: string]: any;
 }
 
 export type DeviceCategory = 'laptop' | 'smartphone' | 'console' | 'workstation';
 
 export interface BookingDevice {
-  /** "Merk & model" gabungan, mis. "Apple iPhone 13" */
+  /** Nama lengkap perangkat yang disimpan pengguna. */
   model: string;
-  brand: string;
   category: DeviceCategory;
   /** Nilai kategori mentah dari DB (untuk kasus yang tidak ada di daftar tile) */
   rawCategory: string;
-  serial: string;
   symptoms: string[];
 }
 
@@ -168,7 +195,16 @@ export interface BookingRow {
   /** Kronologi keluhan pelanggan (tanpa segmen "Gejala:") */
   complaint: string;
   status: 'MENUNGGU_CHECKIN' | 'CHECKED_IN' | 'DIBATALKAN';
+  courierPickupStatus: string | null;
+  devicePin: string | null;
+  pinRefused: boolean;
   raw: BookingApiRow;
+}
+
+export function canCheckInBooking(booking: Pick<BookingRow, 'status' | 'method' | 'courierPickupStatus'>) {
+  if (booking.status !== 'MENUNGGU_CHECKIN') return false;
+  if (booking.method === 'mandiri') return true;
+  return ['PERANGKAT_TIBA_DI_WORKSHOP', 'SELESAI'].includes(booking.courierPickupStatus ?? '');
 }
 
 const DEVICE_CATEGORY_ALIASES: Record<string, DeviceCategory> = {
@@ -199,15 +235,6 @@ const GEJALA_TOKENS = ['overheat', 'mati_total', 'layar', 'baterai', 'air'];
 /** Nilai kategori di DB (varchar bebas) → kategori yang punya tile di form TicketInputPage. */
 export function mapDeviceCategory(value?: string | null): DeviceCategory {
   return DEVICE_CATEGORY_ALIASES[(value ?? '').trim().toLowerCase()] ?? 'laptop';
-}
-
-/** Gabungkan brand + model tanpa menduplikasi brand yang sudah ada di model. */
-export function deviceLabel(brand?: string | null, model?: string | null): string {
-  const b = (brand ?? '').trim();
-  const m = (model ?? '').trim();
-  if (!m) return b;
-  if (!b) return m;
-  return m.toLowerCase().startsWith(b.toLowerCase()) ? m : `${b} ${m}`;
 }
 
 /** Ambil token gejala dari segmen "Gejala: overheat, air" di field complaint. */
@@ -242,17 +269,12 @@ function bookingStatus(status?: string | null): BookingRow['status'] {
 }
 
 function mapBookingDevice(b: BookingApiRow): BookingDevice | undefined {
-  const brand = (b.device_brand ?? '').trim();
-  const model = (b.device_model ?? '').trim();
   const category = (b.device_category ?? '').trim();
-  const serial = (b.device_serial ?? '').trim();
-  if (!brand && !model && !category && !serial) return undefined;
+  if (b.device_model == null && !category) return undefined;
   return {
-    model: deviceLabel(brand, model),
-    brand,
+    model: b.device_model ?? '',
     category: mapDeviceCategory(category),
     rawCategory: category,
-    serial,
     symptoms: parseGejala(b.complaint),
   };
 }
@@ -272,6 +294,9 @@ export function mapBookingRow(b: BookingApiRow): BookingRow {
     device: mapBookingDevice(b),
     complaint: complaintText(b.complaint),
     status: bookingStatus(b.status),
+    courierPickupStatus: b.courier_pickup_status ?? null,
+    devicePin: b.device_pin ?? null,
+    pinRefused: Boolean(b.device_pin_refused),
     raw: b,
   };
 }
@@ -300,7 +325,7 @@ export function mapBookingToFrontdesk(b: BookingApiRow): BookingSlot {
     customer: b.customer_name ?? 'Pelanggan',
     phone: digits(phoneDisplay),
     phoneDisplay,
-    device: deviceLabel(b.device_brand, b.device_model) || 'Perangkat Servis',
+    device: getDeviceDisplayName(b.device_model),
     method: frontdeskMethod(b.service_method),
     status: frontdeskStatus(b.status),
   };
@@ -325,7 +350,7 @@ export function mapBookingToTicketRow(b: BookingApiRow): BookingTicketRow {
     customer: b.customer_name ?? 'Pelanggan',
     phone: digits(phoneDisplay),
     phoneDisplay,
-    device: deviceLabel(b.device_brand, b.device_model) || 'Perangkat Servis',
+    device: getDeviceDisplayName(b.device_model),
     status: trackingStatus(b.status),
     updated: relatif(b.slot_date && new Date(b.slot_date) > new Date() ? undefined : b.created_at ?? b.slot_date),
   };

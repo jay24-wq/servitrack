@@ -17,9 +17,7 @@ import {
   Package,
   UserCircleCheck,
   WarningCircle,
-  ShieldCheck,
   ClockCounterClockwise,
-  Lock,
   MagnifyingGlass,
   Receipt,
   Hourglass,
@@ -41,10 +39,17 @@ import {
 } from '../../components/ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 import { initialsOf } from '../../lib/avatar';
-import { useAuthStore } from '../../store';
-import { getReportsAudit, getReportsDashboard } from '../../lib/api';
+import { useBranchStore } from '../../store/branchStore';
+import { getReportsAudit, getReportsDashboard, getTechnicianWorkflowReport } from '../../lib/api';
+import {
+  formatAuditFields,
+  getAuditActionLabel,
+  getAuditEntityLabel,
+  getAuditObjectLabel,
+  getAuditSummary,
+} from '../../lib/audit-format';
 
-type TicketStatus = 'Antrian' | 'Pengecekan' | 'Pengerjaan' | 'Menunggu Part' | 'Quality Control' | 'Selesai' | 'Siap Diambil';
+type TicketStatus = 'Antrian' | 'Pengecekan' | 'Pengerjaan' | 'Menunggu Part' | 'Menunggu Persetujuan' | 'Quality Control' | 'Selesai' | 'Siap Diambil' | 'Dibatalkan';
 type PaymentMethod = 'cash' | 'qris' | 'va' | 'ewallet';
 type Granularity = 'harian' | 'mingguan' | 'bulanan';
 type Tab = 'laporan' | 'audit';
@@ -56,12 +61,9 @@ interface AuditEntry {
   role: string;
   action: string;
   actionTone: 'sky' | 'amber' | 'rose' | 'emerald' | 'stone';
-  entity: string;
-  entityType: 'tiket' | 'part' | 'invoice' | 'staff' | 'quotation' | 'auth';
-  summary: string;
-  before: string;
-  after: string;
-  ip: string;
+  entityType: string;
+  before: unknown;
+  after: unknown;
 }
 
 const TODAY = new Date();
@@ -90,11 +92,13 @@ const METHOD_META: Record<PaymentMethod, { label: string; icon: Icon; tone: stri
 const STATUS_ORDER: TicketStatus[] = [
   'Antrian',
   'Pengecekan',
-  'Pengerjaan',
   'Menunggu Part',
+  'Menunggu Persetujuan',
+  'Pengerjaan',
   'Quality Control',
   'Selesai',
   'Siap Diambil',
+  'Dibatalkan',
 ];
 
 const STATUS_BAR: Record<TicketStatus, string> = {
@@ -102,9 +106,11 @@ const STATUS_BAR: Record<TicketStatus, string> = {
   Pengecekan: 'bg-amber-500',
   Pengerjaan: 'bg-sky-600',
   'Menunggu Part': 'bg-rose-500',
+  'Menunggu Persetujuan': 'bg-amber-400',
   'Quality Control': 'bg-purple-500',
   Selesai: 'bg-emerald-500',
   'Siap Diambil': 'bg-emerald-400',
+  Dibatalkan: 'bg-stone-500',
 };
 
 const ACTION_TONE: Record<AuditEntry['actionTone'], string> = {
@@ -114,6 +120,22 @@ const ACTION_TONE: Record<AuditEntry['actionTone'], string> = {
   emerald: 'bg-emerald-50 text-emerald-700',
   stone: 'bg-stone-100 text-stone-600',
 };
+
+function AuditFieldsView({ value, emptyLabel }: { value: unknown; emptyLabel: string }) {
+  const fields = formatAuditFields(value);
+  if (!fields.length) return <span className="text-xs text-stone-500">{emptyLabel}</span>;
+
+  return (
+    <dl className="space-y-2">
+      {fields.map((field) => (
+        <div key={field.label}>
+          <dt className="text-[11px] text-stone-500">{field.label}</dt>
+          <dd className="break-words text-xs font-medium leading-5 text-neutral-900">{field.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 const RANGES = [
   { key: 'today', label: 'Hari ini', days: 1 },
@@ -447,16 +469,17 @@ function jam(value: number) { return `${value.toLocaleString('id-ID', { maximumF
 export default function ReportsPage() {
   const [searchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
-  const plan = useAuthStore((state) => state.user?.plan ?? 'starter');
-  const isAdvance = plan.toLowerCase() === 'advance';
+  const currentBranch = useBranchStore((state) => state.currentBranch);
 
   const [tab, setTab] = useState<Tab>(tabFromUrl === 'audit' ? 'audit' : 'laporan');
   const [range, setRange] = useState<(typeof RANGES)[number]['key'] | 'custom'>('30d');
   const [granularity, setGranularity] = useState<Granularity>('harian');
   const [customFrom, setCustomFrom] = useState(new Date(TODAY.getTime() - 13 * DAY).toISOString().slice(0, 10));
   const [customTo, setCustomTo] = useState(TODAY.toISOString().slice(0, 10));
-  const [branch, setBranch] = useState('Semua cabang');
   const [schedule, setSchedule] = useState(SCHEDULES[0]);
+  const [workflowType, setWorkflowType] = useState('');
+  const [workflowDiagnosis, setWorkflowDiagnosis] = useState('');
+  const [workflowQuotation, setWorkflowQuotation] = useState('');
 
   const [auditAction, setAuditAction] = useState('Semua');
   const [auditActor, setAuditActor] = useState('Semua');
@@ -497,12 +520,22 @@ export default function ReportsPage() {
   }, [range, customFrom, customTo]);
 
   const reportQuery = useQuery({
-    queryKey: ['reports-dashboard', windowRange.from, windowRange.to, granularity, branch],
-    queryFn: () => getReportsDashboard({ from: new Date(windowRange.from).toISOString(), to: new Date(windowRange.to).toISOString(), granularity, branch_id: branch }),
+    queryKey: ['reports-dashboard', windowRange.from, windowRange.to, granularity, currentBranch?.id],
+    queryFn: () => getReportsDashboard({ from: new Date(windowRange.from).toISOString(), to: new Date(windowRange.to).toISOString(), granularity }),
   });
   const auditDataQuery = useQuery({
     queryKey: ['reports-audit', auditQuery, auditAction, auditActor, auditEntity, auditFrom, auditTo, auditPage],
     queryFn: () => getReportsAudit({ search: auditQuery, action: auditAction, actor: auditActor, entity: auditEntity, from: auditFrom, to: auditTo, page: auditPage, limit: 25 }),
+  });
+  const workflowReportQuery = useQuery({
+    queryKey: ['reports-technician-workflow', workflowType, workflowDiagnosis, workflowQuotation, windowRange.from, windowRange.to, currentBranch?.id],
+    queryFn: () => getTechnicianWorkflowReport({
+      work_type: workflowType,
+      diagnosis_status: workflowDiagnosis,
+      quotation_status: workflowQuotation,
+      from: new Date(windowRange.from).toISOString().slice(0, 10),
+      to: new Date(windowRange.to).toISOString().slice(0, 10),
+    }),
   });
   const emptyReport = { revenue: 0, prevRevenue: 0, receivable: 0, prevReceivable: 0, active: 0, prevActive: 0, done: 0, prevDone: 0, paidCount: 0, unpaidCount: 0, series: [], methodTotals: (['cash', 'qris', 'va', 'ewallet'] as PaymentMethod[]).map((method) => ({ method, total: 0 })), statusCounts: STATUS_ORDER.map((status) => ({ status, count: 0 })), topParts: [], techTotals: [], aging: [{ label: '0 – 7 hari', tone: 'bg-sky-500', count: 0, total: 0 }, { label: '8 – 30 hari', tone: 'bg-amber-500', count: 0, total: 0 }, { label: '> 30 hari', tone: 'bg-rose-500', count: 0, total: 0 }], invoices: [], tickets: [], totalTickets: 0 };
 
@@ -627,8 +660,8 @@ export default function ReportsPage() {
 
   const report: any = reportQuery.data?.data ?? emptyReport;
   const auditActors: string[] = auditDataQuery.data?.actors ?? [];
-
-  const auditRows: any[] = auditDataQuery.data?.data ?? [];
+  const auditRows: AuditEntry[] = auditDataQuery.data?.data ?? [];
+  const auditEntities = [...new Set((auditDataQuery.data?.options ?? []).map((option: any) => option.entity_type))];
 
   const delta = (current: number, previous: number) => {
     if (!previous) return null;
@@ -645,21 +678,19 @@ export default function ReportsPage() {
             ...report.tickets.map((ticket: any) => ['ticket', ticket.id, ticket.total, ticket.status.toLowerCase()]),
           ]
         : [
-            ['id', 'waktu', 'aktor', 'role', 'aksi', 'entitas', 'ringkasan', 'sebelum', 'sesudah', 'ip'],
+            ['waktu', 'dilakukan oleh', 'peran', 'aktivitas', 'objek', 'ringkasan', 'sebelum', 'sesudah'],
             ...auditRows.map((entry) => [
-              entry.id,
               entry.at,
               entry.actor,
               entry.role,
-              entry.action,
-              entry.entity,
-              entry.summary,
-              entry.before,
-              entry.after,
-              entry.ip,
+              getAuditActionLabel(entry),
+              getAuditObjectLabel(entry),
+              getAuditSummary(entry),
+              formatAuditFields(entry.before).map(({ label, value }) => `${label}: ${value}`).join(' · '),
+              formatAuditFields(entry.after).map(({ label, value }) => `${label}: ${value}`).join(' · '),
             ]),
           ];
-    const csv = lines.map((line) => line.join(';')).join('\n');
+    const csv = lines.map((line) => line.map((value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
@@ -684,7 +715,7 @@ export default function ReportsPage() {
       invert: false,
     },
     {
-      label: 'Piutang belum dibayar',
+      label: 'Tagihan menunggu pembayaran',
       value: rupiah(report.receivable),
       caption: `${report.unpaidCount} nota menunggu`,
       delta: delta(report.receivable, report.prevReceivable),
@@ -722,8 +753,8 @@ export default function ReportsPage() {
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="ServiTrack" className="size-10 object-contain" />
             <span>
-              <span className="block text-base font-bold text-neutral-900">ServiTrack Workshop</span>
-              <span className="block text-xs text-stone-600">Jl. Radio Dalam Raya No. 42, Jakarta Selatan</span>
+              <span className="block text-base font-bold text-neutral-900">{currentBranch?.name || 'Cabang tidak diketahui'}</span>
+              <span className="block text-xs text-stone-600">{currentBranch?.address || 'Alamat cabang tidak tersedia'}</span>
             </span>
           </div>
           <span className="text-right text-xs text-stone-600">
@@ -886,44 +917,66 @@ export default function ReportsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
-              {isAdvance ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-                    >
-                      {branch}
-                      <CaretDown weight="bold" className="size-3.5 text-neutral-500" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    {['Semua cabang', 'Radio Dalam', 'BSD Serpong'].map((option) => (
-                      <DropdownMenuItem key={option} onSelect={() => setBranch(option)}>
-                        <span className={cn('flex-1', branch === option && 'font-bold text-sky-700')}>{option}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  title="Filter per cabang hanya tersedia di paket Advance"
-                  className="inline-flex items-center gap-2 rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-500"
-                >
-                  <Lock weight="bold" className="size-3.5 text-amber-600" /> Cabang: semua (paket Advance)
-                </button>
+              {currentBranch && (
+                <span className="text-xs leading-4">
+                  <span className="text-neutral-500">Cabang aktif: </span>
+                  <span className="font-bold text-zinc-900">{currentBranch.name}</span>
+                </span>
               )}
               <span className="text-xs leading-4">
                 <span className="text-neutral-500">Filter aktif: </span>
                 <span className="font-bold text-zinc-900">
                   {rangeLabel} · {granularity}
-                  {isAdvance && branch !== 'Semua cabang' ? ` · ${branch}` : ''}
                 </span>
               </span>
             </div>
           </div>
+
+          <section className="rounded-xl border border-black/10 bg-white p-4 break-inside-avoid">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-neutral-900">Workflow pengecekan teknisi</h2>
+                <p className="mt-1 text-xs text-stone-600">Jenis pengerjaan, hasil diagnosa, hasil dan waktu respons quotation, serta durasi menunggu part.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <label className="text-[11px] font-medium text-stone-600">Jenis pengerjaan
+                  <select value={workflowType} onChange={(event) => setWorkflowType(event.target.value)} className="mt-1 block h-9 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-zinc-900">
+                    <option value="">Semua</option><option value="without_parts">Tanpa sparepart</option><option value="with_parts">Menggunakan sparepart</option>
+                  </select>
+                </label>
+                <label className="text-[11px] font-medium text-stone-600">Status diagnosa
+                  <select value={workflowDiagnosis} onChange={(event) => setWorkflowDiagnosis(event.target.value)} className="mt-1 block h-9 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-zinc-900">
+                    <option value="">Semua</option><option value="matches_complaint">Sesuai keluhan</option><option value="additional_damage">Kerusakan tambahan</option>
+                  </select>
+                </label>
+                <label className="text-[11px] font-medium text-stone-600">Hasil quotation
+                  <select value={workflowQuotation} onChange={(event) => setWorkflowQuotation(event.target.value)} className="mt-1 block h-9 w-full rounded-md border border-stone-300 bg-white px-2 text-xs text-zinc-900">
+                    <option value="">Semua</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="expired">Expired</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            {workflowReportQuery.isError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">Gagal memuat laporan workflow teknisi.</p>}
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-xs">
+                <thead><tr className="border-y border-stone-200 text-[10px] uppercase tracking-wide text-stone-500"><th className="py-2 pr-3">Tiket</th><th className="py-2 pr-3">Pengerjaan</th><th className="py-2 pr-3">Diagnosa</th><th className="py-2 pr-3">Quotation</th><th className="py-2 pr-3">Respons pelanggan</th><th className="py-2">Menunggu part</th></tr></thead>
+                <tbody>
+                  {(workflowReportQuery.data ?? []).map((row: any) => (
+                    <tr key={row.id} className="border-b border-stone-100 text-stone-700">
+                      <td className="py-2.5 pr-3 font-mono font-semibold text-zinc-900">{row.ticket_code}</td>
+                      <td className="py-2.5 pr-3">{row.work_type === 'with_parts' ? 'Menggunakan sparepart' : row.work_type === 'without_parts' ? 'Tanpa sparepart' : '—'}</td>
+                      <td className="py-2.5 pr-3">{row.diagnosis_status === 'matches_complaint' ? 'Sesuai keluhan' : row.diagnosis_status === 'additional_damage' ? 'Kerusakan tambahan' : '—'}</td>
+                      <td className="py-2.5 pr-3 uppercase">{row.quotation_status ?? '—'}</td>
+                      <td className="py-2.5 pr-3">{row.approval_response_seconds == null ? '—' : `${jam(Number(row.approval_response_seconds) / 3600)}`}</td>
+                      <td className="py-2.5">{jam(Number(row.waiting_part_seconds ?? 0) / 3600)}</td>
+                    </tr>
+                  ))}
+                  {workflowReportQuery.isLoading && <tr><td colSpan={6} className="py-5 text-center text-stone-500">Memuat laporan…</td></tr>}
+                  {!workflowReportQuery.isLoading && workflowReportQuery.data?.length === 0 && <tr><td colSpan={6} className="py-5 text-center text-stone-500">Tidak ada tiket untuk filter ini.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 print:grid-cols-4">
             {statCards.map((card) => {
@@ -1251,7 +1304,7 @@ export default function ReportsPage() {
                 value={auditQuery}
                 onChange={(event) => { setAuditQuery(event.target.value); setAuditPage(1); }}
                 aria-label="Cari aktivitas audit"
-                placeholder="Cari aktor, entitas, atau aksi..."
+                placeholder="Cari nama, nomor tiket, sparepart, atau perubahan..."
                 className="h-auto rounded-lg border-black/10 bg-stone-100 py-1.5 pl-9 pr-3 text-xs text-neutral-900 caret-sky-600 shadow-none placeholder:text-stone-400 focus-visible:border-sky-500"
               />
             </div>
@@ -1265,21 +1318,23 @@ export default function ReportsPage() {
                     type="button"
                     className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-stone-100 px-3 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                   >
-                    {auditAction === 'Semua' ? 'Semua jenis aksi' : `Aksi ${auditAction}`}
+                    {auditAction === 'Semua' ? 'Semua jenis aktivitas' : getAuditActionLabel({ action: auditAction, entityType: '' })}
                     <CaretDown weight="bold" className="size-3.5 text-neutral-500" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-52">
-                  <DropdownMenuLabel className="text-stone-400">Jenis aksi</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-stone-400">Jenis aktivitas</DropdownMenuLabel>
                   <DropdownMenuItem onSelect={() => { setAuditAction('Semua'); setAuditPage(1); }}>
                     <span className={cn('flex-1', auditAction === 'Semua' && 'font-bold text-sky-700')}>
-                      Semua jenis aksi
+                      Semua jenis aktivitas
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   {(auditDataQuery.data?.actions ?? []).map((action: string) => (
                     <DropdownMenuItem key={action} onSelect={() => { setAuditAction(action); setAuditPage(1); }}>
-                      <span className={cn('flex-1', auditAction === action && 'font-bold text-sky-700')}>{action}</span>
+                      <span className={cn('flex-1', auditAction === action && 'font-bold text-sky-700')}>
+                        {getAuditActionLabel({ action, entityType: '' })}
+                      </span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -1312,14 +1367,14 @@ export default function ReportsPage() {
               </DropdownMenu>
 
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-stone-100 px-3 py-1.5 text-xs font-medium text-stone-700"><span>{auditEntity === 'Semua' ? 'Semua entitas' : auditEntity}</span><CaretDown weight="bold" className="size-3.5 text-neutral-500" /></button></DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52"><DropdownMenuLabel className="text-stone-400">Entitas</DropdownMenuLabel><DropdownMenuItem onSelect={() => { setAuditEntity('Semua'); setAuditPage(1); }}>Semua entitas</DropdownMenuItem>{(auditDataQuery.data?.options ?? []).map((option: any) => <DropdownMenuItem key={option.entity_type} onSelect={() => { setAuditEntity(option.entity_type); setAuditPage(1); }}>{option.entity_type}</DropdownMenuItem>)}</DropdownMenuContent>
+                <DropdownMenuTrigger asChild><button type="button" className="inline-flex items-center gap-2 rounded-lg border border-black/10 bg-stone-100 px-3 py-1.5 text-xs font-medium text-stone-700"><span>{auditEntity === 'Semua' ? 'Semua jenis data' : getAuditEntityLabel(auditEntity)}</span><CaretDown weight="bold" className="size-3.5 text-neutral-500" /></button></DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52"><DropdownMenuLabel className="text-stone-400">Jenis data</DropdownMenuLabel><DropdownMenuItem onSelect={() => { setAuditEntity('Semua'); setAuditPage(1); }}>Semua jenis data</DropdownMenuItem>{auditEntities.map((entityType: string) => <DropdownMenuItem key={entityType} onSelect={() => { setAuditEntity(entityType); setAuditPage(1); }}>{getAuditEntityLabel(entityType)}</DropdownMenuItem>)}</DropdownMenuContent>
               </DropdownMenu>
 
               <span className="text-xs leading-4">
                 <span className="text-neutral-500">Filter aktif: </span>
                 <span className="font-bold text-zinc-900">
-                  {[auditAction !== 'Semua' ? `aksi ${auditAction}` : null, auditActor !== 'Semua' ? auditActor : null, auditEntity !== 'Semua' ? auditEntity : null]
+                  {[auditAction !== 'Semua' ? getAuditActionLabel({ action: auditAction, entityType: '' }) : null, auditActor !== 'Semua' ? auditActor : null, auditEntity !== 'Semua' ? getAuditEntityLabel(auditEntity) : null]
                     .filter(Boolean)
                     .join(' · ') || 'Semua'}
                 </span>
@@ -1336,18 +1391,6 @@ export default function ReportsPage() {
             </Button>
           </div>
 
-          <div className="flex items-start gap-3 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 p-4">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-600">
-              <ShieldCheck weight="bold" className="size-3.5" />
-            </span>
-            <p className="text-xs leading-4 text-neutral-500">
-              <span className="font-bold text-neutral-900">Jejak audit tidak dapat dihapus.</span> Aksi sensitif (ubah
-              harga, hapus tiket, ubah stok, ubah role) dicatat otomatis bersama aktor, sebelum → sesudah, dan alamat IP.
-              Penghapusan master data yang punya riwayat mutasi tetap diblokir foreign key{' '}
-              <span className="font-mono">ticket_part_usages</span>.
-            </p>
-          </div>
-
           <div className="min-w-0">
             <div className="overflow-hidden rounded-xl border border-black/10 bg-white">
               <div className="ledger-scroll overflow-x-auto">
@@ -1362,13 +1405,13 @@ export default function ReportsPage() {
                         Aktor
                       </th>
                       <th scope="col" className="px-4 py-3 text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
-                        Aksi
+                        Aktivitas
                       </th>
                       <th scope="col" className="px-4 py-3 text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
-                        Entitas
+                        Objek
                       </th>
                       <th scope="col" className="px-4 py-3 text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
-                        Ringkasan
+                        Perubahan
                       </th>
                       <th scope="col" className="px-5 py-3 text-right text-xs font-bold uppercase leading-4 tracking-wide text-neutral-500">
                         Detail
@@ -1376,14 +1419,29 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                        {auditRows.map((entry) => {
+                        {auditDataQuery.isLoading ? (
+                          <tr>
+                            <td colSpan={6} className="px-5 py-12 text-center text-sm text-stone-500" role="status">
+                              Memuat aktivitas audit…
+                            </td>
+                          </tr>
+                        ) : auditDataQuery.isError && !auditDataQuery.data ? (
+                          <tr>
+                            <td colSpan={6} className="px-5 py-12 text-center" role="alert">
+                              <span className="block text-sm font-semibold text-neutral-900">Audit Trail gagal dimuat</span>
+                              <span className="mt-1 block text-xs text-stone-500">Periksa koneksi atau akses Anda, lalu coba lagi.</span>
+                              <Button variant="outline" size="sm" className="mt-3" onClick={() => void auditDataQuery.refetch()}>
+                                Coba lagi
+                              </Button>
+                            </td>
+                          </tr>
+                        ) : auditRows.map((entry) => {
                       const isOpen = expanded === entry.id;
                       return (
                         <Fragment key={entry.id}>
                           <tr className="border-t border-neutral-100 transition-colors hover:bg-sky-50/40">
                             <td className="whitespace-nowrap px-5 py-3.5 text-xs tabular-nums text-stone-600">
                               {entry.at}
-                              <span className="mt-0.5 block font-mono text-[11px] text-stone-400">{entry.ip}</span>
                             </td>
                             <td className="px-4 py-3.5">
                               <span className="flex items-center gap-2">
@@ -1410,24 +1468,24 @@ export default function ReportsPage() {
                             <td className="px-4 py-3.5">
                               <span
                                 className={cn(
-                                  'inline-flex rounded px-2 py-0.5 font-mono text-[11px] font-semibold',
-                                   ACTION_TONE[entry.actionTone as AuditEntry['actionTone']]
+                                   'inline-flex rounded px-2 py-0.5 text-[11px] font-semibold',
+                                    ACTION_TONE[entry.actionTone as AuditEntry['actionTone']]
                                 )}
                               >
-                                {entry.action}
+                                {getAuditActionLabel(entry)}
                               </span>
                             </td>
                             <td className="px-4 py-3.5">
-                              <span className="block font-mono text-xs font-semibold text-sky-700">{entry.entity}</span>
-                              <span className="block text-[11px] capitalize text-stone-500">{entry.entityType}</span>
+                              <span className="block text-xs font-semibold text-neutral-900">{getAuditObjectLabel(entry)}</span>
+                              <span className="block text-[11px] text-stone-500">{getAuditEntityLabel(entry.entityType)}</span>
                             </td>
-                            <td className="px-4 py-3.5 text-xs leading-5 text-stone-700">{entry.summary}</td>
+                            <td className="px-4 py-3.5 text-xs leading-5 text-stone-700">{getAuditSummary(entry)}</td>
                             <td className="px-5 py-3.5 text-right">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 aria-expanded={isOpen}
-                                aria-label={`Detail ${entry.id}`}
+                                aria-label={`${isOpen ? 'Tutup' : 'Lihat'} perubahan: ${getAuditActionLabel(entry)}`}
                                 onClick={() => setExpanded(isOpen ? null : entry.id)}
                                 className="h-auto gap-1 px-2 py-1 text-xs text-sky-700"
                               >
@@ -1442,18 +1500,19 @@ export default function ReportsPage() {
                           {isOpen && (
                             <tr className="border-t border-neutral-100 bg-stone-50/60">
                               <td colSpan={6} className="px-5 py-4">
-                                <div className="grid gap-3 text-xs sm:grid-cols-3">
+                                <div className="grid gap-4 text-xs sm:grid-cols-3">
                                   <div>
-                                    <span className="block text-stone-500">ID audit</span>
-                                    <span className="block font-mono font-semibold text-neutral-900">{entry.id}</span>
+                                    <span className="mb-2 block text-stone-500">Objek</span>
+                                    <span className="block font-semibold text-neutral-900">{getAuditObjectLabel(entry)}</span>
+                                    <span className="mt-1 block text-stone-500">{getAuditEntityLabel(entry.entityType)}</span>
                                   </div>
                                   <div>
                                     <span className="block text-stone-500">Sebelum</span>
-                                    <span className="block font-mono text-neutral-900">{entry.before}</span>
+                                    <AuditFieldsView value={entry.before} emptyLabel="Belum ada data sebelumnya" />
                                   </div>
                                   <div>
                                     <span className="block text-stone-500">Sesudah</span>
-                                    <span className="block font-mono text-neutral-900">{entry.after}</span>
+                                    <AuditFieldsView value={entry.after} emptyLabel="Tidak ada rincian perubahan" />
                                   </div>
                                 </div>
                                 <p className="mt-3 flex items-center gap-1.5 text-[11px] leading-4 text-stone-500">
@@ -1466,14 +1525,14 @@ export default function ReportsPage() {
                         </Fragment>
                       );
                     })}
-                    {auditRows.length === 0 && (
+                    {!auditDataQuery.isLoading && !auditDataQuery.isError && auditRows.length === 0 && (
                       <tr>
                         <td colSpan={6} className="px-5 py-12 text-center">
                           <span className="block text-sm font-semibold text-neutral-900">
-                            Tidak ada aktivitas yang cocok
+                            Belum ada aktivitas pada rentang ini
                           </span>
                           <span className="mt-1 block text-xs text-stone-500">
-                            Longgarkan filter aksi/aktor atau kosongkan kata kunci pencarian.
+                            Ubah rentang tanggal atau longgarkan filter aksi, aktor, dan kata kunci.
                           </span>
                           <Button
                             variant="outline"
@@ -1498,11 +1557,13 @@ export default function ReportsPage() {
 
               <div className="flex flex-col gap-3 border-t border-black/5 px-5 py-3 md:flex-row md:items-center md:justify-between">
                 <span className="text-xs leading-4 text-stone-600">
-                  Menampilkan{' '}
-                  <span className="tabular-nums text-neutral-900">
-                     {auditRows.length ? ((auditDataQuery.data?.pagination?.page ?? 1) - 1) * (auditDataQuery.data?.pagination?.limit ?? 25) + 1 : 0} - {((auditDataQuery.data?.pagination?.page ?? 1) - 1) * (auditDataQuery.data?.pagination?.limit ?? 25) + auditRows.length}
-                  </span>{' '}
-                   dari <span className="tabular-nums text-neutral-900">{auditDataQuery.data?.pagination?.total ?? 0}</span> aktivitas
+                   {auditDataQuery.isLoading ? 'Memuat aktivitas…' : auditDataQuery.isError && !auditDataQuery.data ? 'Aktivitas tidak tersedia' : 'Menampilkan '}
+                   {!auditDataQuery.isLoading && !(auditDataQuery.isError && !auditDataQuery.data) && <>
+                   <span className="tabular-nums text-neutral-900">
+                      {auditRows.length ? ((auditDataQuery.data?.pagination?.page ?? 1) - 1) * (auditDataQuery.data?.pagination?.limit ?? 25) + 1 : 0} - {((auditDataQuery.data?.pagination?.page ?? 1) - 1) * (auditDataQuery.data?.pagination?.limit ?? 25) + auditRows.length}
+                   </span>{' '}
+                    dari <span className="tabular-nums text-neutral-900">{auditDataQuery.data?.pagination?.total ?? 0}</span> aktivitas
+                   </>}
                 </span>
                 <div className="flex items-center gap-1.5">
                    <Button variant="secondary" size="sm" disabled={(auditDataQuery.data?.pagination?.page ?? 1) <= 1 || auditDataQuery.isLoading} onClick={() => setAuditPage((value) => value - 1)} className="h-auto px-2.5 py-1 text-xs font-normal text-neutral-400">
@@ -1528,9 +1589,7 @@ export default function ReportsPage() {
 
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-black/10 bg-white p-4 text-xs">
             <p className="leading-5 text-stone-600">
-              <span className="font-bold text-neutral-900">Kontrak API:</span>{' '}
-              <span className="font-mono">GET /reports/dashboard</span> (revenue, unpaid, active, done, topParts) dan{' '}
-              <span className="font-mono">GET /reports/export?format=csv</span> · akses Admin. Data pada halaman ini
+              Data pada halaman ini
               menggunakan data agregasi database sesuai filter aktif.
             </p>
           </div>

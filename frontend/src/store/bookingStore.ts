@@ -3,6 +3,8 @@ import { create } from 'zustand';
 export interface BookingDate {
   iso: string;
   slots: number;
+  openTime?: string | null;
+  closeTime?: string | null;
 }
 
 interface BookingState {

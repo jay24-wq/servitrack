@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight,
   Clock,
@@ -10,49 +11,100 @@ import {
 
 import { Input } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
-import { useTicketStore, FLOW_STAGES, type QueueStatus } from '../../store';
+import { useAuthStore, useTicketStore, FLOW_STAGES, type QueueStatus, type QueueTicket } from '../../store';
 import { getTechnicianDashboard, updateTicketStatus } from '../../lib/api';
-import { mapServiceTicketToQueueTicket } from '../../lib/mappers';
+import { mapServiceTicketToQueueTicket, STATUS_TO_DB } from '../../lib/mappers';
 import TicketDetailSheet from './TicketDetailSheet';
+import { canTransitionTicket } from '../../../../common/utils/TicketStatuses';
 
 const STATUS_ACCENT: Record<QueueStatus, string> = {
   Antrian: 'bg-amber-500',
   Pengecekan: 'bg-sky-500',
   'Menunggu Part': 'bg-rose-500',
+  'Menunggu Persetujuan': 'bg-amber-500',
   Pengerjaan: 'bg-sky-600',
   'Quality Control': 'bg-indigo-500',
   Selesai: 'bg-emerald-500',
+  'Siap Diambil': 'bg-violet-500',
+  Dibatalkan: 'bg-stone-400',
 };
 
 export default function TechnicianKanbanPage() {
+  const user = useAuthStore((s) => s.user);
   const tickets = useTicketStore((s) => s.tickets);
   const setTickets = useTicketStore((s) => s.setTickets);
   const updateTicket = useTicketStore((s) => s.updateTicket);
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<QueueStatus | null>(null);
+  const [statusError, setStatusError] = useState('');
+  const [restockNotice, setRestockNotice] = useState('');
 
   const filtered = tickets;
 
+  const dashboardQuery = useQuery({
+    queryKey: ['technician-dashboard', user?.tenant_id, user?.branch_id, user?.id, query.trim()],
+    queryFn: () => getTechnicianDashboard(query.trim()),
+    staleTime: 0,
+    refetchInterval: 15_000,
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ recordId, status }: { recordId: string; status: QueueStatus }) =>
+      updateTicketStatus(recordId, STATUS_TO_DB[status]),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['technician-dashboard'] }),
+    retry: false,
+  });
+
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      getTechnicianDashboard(query.trim())
-        .then((result) => setTickets(result.tickets.map(mapServiceTicketToQueueTicket)))
-        .catch(() => setTickets([]));
-    }, query.trim() ? 250 : 0);
-    return () => window.clearTimeout(timer);
-  }, [query, setTickets]);
+    if (dashboardQuery.data) {
+      const refreshed = dashboardQuery.data.tickets.map(mapServiceTicketToQueueTicket);
+      const previousTickets = useTicketStore.getState().tickets;
+      const resumed = refreshed.filter((next) => previousTickets.some((current) => current.recordId === next.recordId && current.status === 'Menunggu Part') && next.status === 'Pengerjaan');
+      if (resumed.length) setRestockNotice(`Part sudah tersedia dan tiket ${resumed.map((item) => item.id).join(', ')} siap dikerjakan.`);
+      setTickets(refreshed);
+    } else if (dashboardQuery.isError) {
+      setTickets([]);
+    }
+  }, [dashboardQuery.data, dashboardQuery.isError, setTickets]);
+
+  const persistStatus = async (id: string, status: QueueStatus, patch: Partial<QueueTicket> = {}) => {
+    if (statusMutation.isPending) throw new Error('Pembaruan status masih berlangsung');
+    const ticket = tickets.find((item) => item.id === id);
+    if (!ticket?.recordId) throw new Error('ID database tiket tidak tersedia');
+
+    await statusMutation.mutateAsync({ recordId: ticket.recordId, status });
+    updateTicket(id, { status, ...patch });
+  };
 
   const handleDrop = async (status: QueueStatus, event: React.DragEvent) => {
     event.preventDefault();
     const id = event.dataTransfer.getData('text/plain');
-    if (id) {
-      const dbStatus = status === 'Pengecekan' ? 'pengecekan' : status === 'Menunggu Part' ? 'menunggu_part' : status === 'Quality Control' ? 'quality_check' : status.toLowerCase();
+    const ticket = tickets.find((item) => item.id === id);
+    if (ticket && ticket.status !== status && !statusMutation.isPending) {
+      if (status === 'Menunggu Persetujuan' || status === 'Dibatalkan' || ticket.status === 'Menunggu Persetujuan') {
+        setStatusError('Persetujuan pelanggan hanya dapat diproses melalui detail tiket.');
+        setOpenTicketId(ticket.id);
+        setDragOver(null);
+        return;
+      }
+      if (ticket.status === 'Pengecekan') {
+        setStatusError('Simpan hasil Pengecekan melalui detail tiket sebelum memindahkan kartu.');
+        setOpenTicketId(ticket.id);
+        setDragOver(null);
+        return;
+      }
+      if (!canTransitionTicket(STATUS_TO_DB[ticket.status], STATUS_TO_DB[status])) {
+        setStatusError(`Transisi ${ticket.status} → ${status} tidak diizinkan.`);
+        setDragOver(null);
+        return;
+      }
       try {
-        await updateTicketStatus(id, dbStatus);
-        updateTicket(id, { status });
+        setStatusError('');
+        await persistStatus(id, status);
       } catch {
-        // Keep the card in its current column when the database rejects the transition.
+        setStatusError('Status tiket gagal disimpan. Kartu tetap di kolom sebelumnya.');
       }
     }
     setDragOver(null);
@@ -73,12 +125,20 @@ export default function TechnicianKanbanPage() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Cari tiket berdasarkan kode tiket, serial number, atau tipe perangkat"
-            placeholder="Cari kode tiket / serial / perangkat..."
+            aria-label="Cari tiket berdasarkan kode tiket, nama pelanggan, atau model perangkat"
+            placeholder="Cari kode tiket / pelanggan / model perangkat..."
             className="h-10 rounded-lg border-black/10 bg-stone-100 pl-9 pr-3 text-xs text-zinc-900 caret-sky-600 shadow-none placeholder:text-neutral-500 focus-visible:border-sky-500"
           />
         </div>
       </div>
+
+      {statusError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{statusError}</p>}
+      {restockNotice && <div role="status" className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><span>{restockNotice}</span><button type="button" onClick={() => setRestockNotice('')} aria-label="Tutup notifikasi restock" className="font-bold">×</button></div>}
+      {dashboardQuery.isError && (
+        <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          Gagal memuat tiket dari server. Pastikan backend aktif dan migrasi database sudah dijalankan.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 pb-4 md:grid-cols-2 lg:grid-cols-6">
         {FLOW_STAGES.map((status) => {
@@ -152,6 +212,11 @@ export default function TechnicianKanbanPage() {
                             )}
                           </div>
                         )}
+                        {!!ticket.partShortages?.length && (
+                          <p className="mt-2 rounded-md bg-rose-50 px-2 py-1.5 text-[10px] font-semibold text-rose-800">
+                            Kurang: {ticket.partShortages.map((part) => `${part.part_name} ${part.shortage_qty}${part.part_request_status ? ` · ${part.part_request_status}` : ''}${part.estimated_arrival_days ? ` · ${part.estimated_arrival_days} hari` : ''}`).join(', ')}
+                          </p>
+                        )}
 
                         <div className="mt-3 flex items-center justify-between border-t border-black/5 pt-2.5">
                           <span className="flex items-center gap-1 text-[10px] text-stone-400">
@@ -182,6 +247,8 @@ export default function TechnicianKanbanPage() {
       <TicketDetailSheet
         ticketId={openTicketId}
         open={openTicketId !== null}
+        onStatusChange={persistStatus}
+        statusSaving={statusMutation.isPending}
         onOpenChange={(open) => {
           if (!open) setOpenTicketId(null);
         }}

@@ -4,6 +4,8 @@ import { authMiddleware, AuthRequest } from '@middleware/AuthMiddleware';
 import { reqDb, tenantResolver } from '@middleware/TenantResolver';
 import { planGuard } from '@middleware/PlanGuard';
 import { PLAN_LIMITS } from '../../../config/plans';
+import { logAudit } from '@services/auditLog';
+import { isValidStaffPhone } from '@common/utils/staffPhone';
 
 export const staffRouter = Router();
 
@@ -62,15 +64,18 @@ staffRouter.post('/', planGuard, async (req: AuthRequest, res: Response) => {
     }
 
     const tenant_id = req.user?.tenant_id;
-    const { name, email, password, role, branch_id } = req.body;
+    const { name, email, phone, password, role, branch_id } = req.body;
 
-    if (!name || !email || !password || !role) {
-      res.status(400).json({ error: 'Field name, email, password, dan role wajib diisi' });
+    if (!name || !email || !password || !role || !phone) {
+      res.status(400).json({ error: 'Field name, email, phone, password, dan role wajib diisi' });
       return;
     }
-
-    if (role === 'admin') {
-      res.status(400).json({ error: 'Tidak dapat membuat staf dengan role admin melalui endpoint ini' });
+    if (!isValidStaffPhone(phone)) {
+      res.status(400).json({ error: 'Nomor handphone harus menggunakan format 628xxxxxxxxxx' });
+      return;
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ error: 'Password minimal 8 karakter' });
       return;
     }
 
@@ -107,10 +112,18 @@ staffRouter.post('/', planGuard, async (req: AuthRequest, res: Response) => {
         role_id: roleRecord.id,
         name,
         email,
+        phone,
         password_hash,
         is_active: true,
       })
-      .returning(['id', 'name', 'email', 'created_at']);
+      .returning(['id', 'name', 'email', 'phone', 'created_at']);
+
+    await logAudit(reqDb(req), req, {
+      action: 'staff.created',
+      entityType: 'staff',
+      entityId: newUser.id,
+      newValues: { name, email, phone, role, branch_id: branch_id || null, is_active: true },
+    });
 
     res.status(201).json({
       message: 'Staf berhasil ditambahkan',
@@ -135,14 +148,27 @@ staffRouter.put('/:id', async (req: AuthRequest, res: Response) => {
 
     const tenant_id = req.user?.tenant_id;
     const { id } = req.params;
-    const { name, email, role, branch_id, is_active, courier_status } = req.body;
+    const { name, email, password, role, branch_id, is_active, courier_status } = req.body;
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = String(name).trim();
     if (email !== undefined) updateData.email = email;
-    if (req.body.phone !== undefined) updateData.phone = req.body.phone || null;
+    if (req.body.phone !== undefined) {
+      if (!isValidStaffPhone(req.body.phone)) {
+        res.status(400).json({ error: 'Nomor handphone harus menggunakan format 628xxxxxxxxxx' });
+        return;
+      }
+      updateData.phone = req.body.phone;
+    }
     if (branch_id !== undefined) updateData.branch_id = branch_id;
     if (is_active !== undefined) updateData.is_active = is_active;
+    if (password !== undefined && password !== '') {
+      if (typeof password !== 'string' || password.length < 8) {
+        res.status(400).json({ error: 'Password minimal 8 karakter' });
+        return;
+      }
+      updateData.password_hash = await bcrypt.hash(password, 10);
+    }
     if (courier_status !== undefined) {
       const normalizedStatus = String(courier_status).toUpperCase();
       if (!['ONLINE', 'OFFLINE'].includes(normalizedStatus)) {
@@ -166,16 +192,53 @@ staffRouter.put('/:id', async (req: AuthRequest, res: Response) => {
       updateData.role_id = roleRecord.id;
     }
 
+    const existing = await reqDb(req)('users as u')
+      .leftJoin('roles as r', 'r.id', 'u.role_id')
+      .where({ 'u.id': id, 'u.tenant_id': tenant_id })
+      .whereNull('u.deleted_at')
+      .select('u.name', 'u.email', 'u.phone', 'u.is_active', 'u.courier_status', 'u.branch_id', 'r.code as role')
+      .forUpdate('u')
+      .first();
+    if (!existing) {
+      res.status(404).json({ error: 'Staf tidak ditemukan' });
+      return;
+    }
+
     const [updated] = await reqDb(req)('users')
       .where({ id, tenant_id })
       .whereNull('deleted_at')
       .update(updateData)
-      .returning(['id', 'name', 'email', 'is_active']);
+      .returning(['id', 'name', 'email', 'phone', 'is_active']);
 
     if (!updated) {
       res.status(404).json({ error: 'Staf tidak ditemukan' });
       return;
     }
+
+    await logAudit(reqDb(req), req, {
+      action: 'staff.updated',
+      entityType: 'staff',
+      entityId: id,
+      oldValues: {
+        name: existing.name,
+        email: existing.email,
+        phone: existing.phone,
+        role: existing.role,
+        branch_id: existing.branch_id,
+        is_active: existing.is_active,
+        courier_status: existing.courier_status,
+      },
+      newValues: {
+        name: updateData.name ?? existing.name,
+        email: updateData.email ?? existing.email,
+        phone: updateData.phone !== undefined ? updateData.phone : existing.phone,
+        role: role ?? existing.role,
+        branch_id: updateData.branch_id !== undefined ? updateData.branch_id : existing.branch_id,
+        is_active: updateData.is_active ?? existing.is_active,
+        courier_status: updateData.courier_status ?? existing.courier_status,
+        password_changed: Boolean(updateData.password_hash),
+      },
+    });
 
     res.json({ message: 'Staf berhasil diperbarui', data: updated });
   } catch (error: any) {
@@ -199,6 +262,17 @@ staffRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const existing = await reqDb(req)('users')
+      .where({ id, tenant_id })
+      .whereNull('deleted_at')
+      .select('name', 'email', 'is_active')
+      .forUpdate()
+      .first();
+    if (!existing) {
+      res.status(404).json({ error: 'Staf tidak ditemukan' });
+      return;
+    }
+
     const updated = await reqDb(req)('users')
       .where({ id, tenant_id })
       .whereNull('deleted_at')
@@ -208,6 +282,14 @@ staffRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
       res.status(404).json({ error: 'Staf tidak ditemukan' });
       return;
     }
+
+    await logAudit(reqDb(req), req, {
+      action: 'staff.deleted',
+      entityType: 'staff',
+      entityId: id,
+      oldValues: existing,
+      newValues: { ...existing, is_active: false, deleted: true },
+    });
 
     res.json({ message: 'Staf berhasil dihapus' });
   } catch (error: any) {

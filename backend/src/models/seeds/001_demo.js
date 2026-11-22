@@ -106,9 +106,7 @@ export async function seed(knex) {
       tenant_id: TENANT_ID,
       customer_id: cust.id,
       category: 'smartphone',
-      brand: 'Apple',
       model: 'iPhone 13',
-      serial_number: 'DEMO-SN-0001',
     })
     .returning('*');
 
