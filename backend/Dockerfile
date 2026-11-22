@@ -16,7 +16,8 @@ RUN npm ci --omit=dev
 COPY --from=builder --chown=node:node /app/backend/dist/backend/src/server.js ./dist/backend/src/server.js
 COPY --from=builder --chown=node:node /app/backend/knexfile.ts ./knexfile.ts
 COPY --from=builder --chown=node:node /app/backend/config/database.ts ./config/database.ts
-COPY --from=builder --chown=node:node /app/backend/src/models/migrations ./src/models/migrations
+COPY --from=builder --chown=node:node /app/backend/src ./src
+COPY --from=builder --chown=node:node /app/common ../common
 RUN mkdir -p /app/uploads && chown node:node /app/uploads
 USER node
 EXPOSE 3000

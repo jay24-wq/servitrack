@@ -37,7 +37,15 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(cors());
+const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean);
+const corsFallback = process.env.NODE_ENV === 'production' ? false : '*';
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (corsOrigins?.length) return callback(null, corsOrigins.includes(origin) ? origin : false);
+    callback(null, corsFallback);
+  },
+}));
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
