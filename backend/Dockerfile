@@ -13,7 +13,7 @@ ENV NODE_ENV=production \
 WORKDIR /app/backend
 COPY --from=builder --chown=node:node /app/backend/package*.json ./
 RUN npm ci --omit=dev
-COPY --from=builder --chown=node:node /app/backend/dist ./dist
+COPY --from=builder --chown=node:node /app/backend/dist/backend/src/server.js ./dist/backend/src/server.js
 RUN mkdir -p /app/uploads && chown node:node /app/uploads
 USER node
 EXPOSE 3000
