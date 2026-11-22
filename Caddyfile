@@ -1,0 +1,4 @@
+api.servitrack.my.id {
+	encode zstd gzip
+	reverse_proxy backend:3000
+}
