@@ -313,6 +313,11 @@ export class OpenWaProvider implements NotificationProvider {
       method: 'POST',
       body: JSON.stringify({ chatId: `${normalizeWhatsAppPhone(toPhone)}@c.us`, text }),
     });
+    const sendResult = payload?.data ?? payload;
+    const sendStatus = String(sendResult?.status ?? '').toLowerCase();
+    if (sendResult?.success === false || ['error', 'failed', 'failure'].includes(sendStatus)) {
+      throw new Error(String(sendResult?.message ?? sendResult?.error ?? 'OpenWA gagal mengirim pesan'));
+    }
     return { providerMessageId: providerMessageId(payload) };
   }
 

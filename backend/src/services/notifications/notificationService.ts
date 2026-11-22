@@ -4,8 +4,8 @@ import type { NotificationProvider, WhatsAppNotificationInput } from './types';
 import type { Knex } from 'knex';
 import { renderWhatsAppTemplate } from './templates';
 
-const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 300;
+const MAX_LOG_UPDATE_ATTEMPTS = 3;
 const MAX_ACTIVE_DELIVERIES = 2;
 
 let provider: NotificationProvider | null = null;
@@ -178,22 +178,18 @@ export async function sendWhatsAppNotification(input: WhatsAppNotificationInput,
   let lastError = 'OpenWA tidak tersedia';
   let providerMessageId: string | null | undefined;
   let sent = false;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    try {
-      await updateLog(input.tenantId, log.id, { status: 'queued', attempt_count: attempt, last_attempt_at: new Date(), error_code: null, error_message: null });
-      const result = await getNotificationProvider().sendTemplateMessage(input.tenantId, toPhone, input.templateName, input.variables);
-      providerMessageId = result.providerMessageId;
-      sent = true;
-      break;
-    } catch (error: any) {
-      lastError = error?.message ?? String(error);
-      if (/^WhatsApp tenant belum terhubung$|^Nomor WhatsApp tenant tidak cocok|^Nomor tidak tersedia dari OpenWA$/.test(lastError)) break;
-      if (attempt < MAX_ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt));
-    }
+  try {
+    // A timeout can happen after OpenWA accepted the message, so retrying can send duplicates.
+    await updateLog(input.tenantId, log.id, { status: 'queued', attempt_count: 1, last_attempt_at: new Date(), error_code: null, error_message: null });
+    const result = await getNotificationProvider().sendTemplateMessage(input.tenantId, toPhone, input.templateName, input.variables);
+    providerMessageId = result.providerMessageId;
+    sent = true;
+  } catch (error: any) {
+    lastError = error?.message ?? String(error);
   }
 
   if (sent) {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= MAX_LOG_UPDATE_ATTEMPTS; attempt += 1) {
       try {
         await updateLog(input.tenantId, log.id, {
           status: 'sent',
@@ -203,7 +199,7 @@ export async function sendWhatsAppNotification(input: WhatsAppNotificationInput,
         });
         break;
       } catch (error) {
-        if (attempt === MAX_ATTEMPTS) console.error('[WhatsApp] pesan terkirim, tetapi status log belum tersimpan', error);
+        if (attempt === MAX_LOG_UPDATE_ATTEMPTS) console.error('[WhatsApp] pesan terkirim, tetapi status log belum tersimpan', error);
         else await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt));
       }
     }

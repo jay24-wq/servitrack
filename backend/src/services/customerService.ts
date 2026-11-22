@@ -15,6 +15,7 @@ export async function findOrCreateCustomerByPhone(
 
   if (created) return created;
 
+  // The existing row is the primary WhatsApp contact; the submitted name stays on the booking snapshot.
   const customer = await trx('customers')
     .where({ tenant_id: tenantId, phone_wa: phoneWa })
     .first();

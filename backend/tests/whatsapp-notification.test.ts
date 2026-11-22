@@ -139,18 +139,20 @@ describe('WhatsApp notification delivery', () => {
     expect(state.logs[0]).toMatchObject({ status: 'sent', provider_msg_id: 'single-send' });
   });
 
-  it('records FAILED and the last provider error after retries', async () => {
+  it('does not repeat a provider send after an ambiguous transport error', async () => {
     configureProvider();
+    let attempts = 0;
     setNotificationProviderForTests({
       sendTextMessage: async () => ({}),
-      sendTemplateMessage: async () => { throw new Error('OpenWA tidak dapat dijangkau'); },
+      sendTemplateMessage: async () => { attempts += 1; throw new Error('OpenWA tidak dapat dijangkau'); },
       healthCheck: async () => true,
     });
 
     const result = await sendWhatsAppNotification(input);
 
     expect(result).toMatchObject({ status: 'failed', error: 'OpenWA tidak dapat dijangkau' });
-    expect(state.logs[0]).toMatchObject({ status: 'failed', error_code: 'PROVIDER_SEND_FAILED', error_message: 'OpenWA tidak dapat dijangkau', attempt_count: 3 });
+    expect(attempts).toBe(1);
+    expect(state.logs[0]).toMatchObject({ status: 'failed', error_code: 'PROVIDER_SEND_FAILED', error_message: 'OpenWA tidak dapat dijangkau', attempt_count: 1 });
   });
 
   it('skips a tenant without a ready WhatsApp session and records the clear reason once', async () => {
@@ -172,33 +174,23 @@ describe('WhatsApp notification delivery', () => {
     expect(state.logs[0]).toMatchObject({ status: 'failed', error_message: 'WhatsApp tenant belum terhubung' });
   });
 
-  it('uses increasing retry delays and succeeds on a later attempt', async () => {
+  it('sends only once when OpenWA times out after possibly accepting the message', async () => {
     configureProvider();
-    vi.useFakeTimers();
     let attempts = 0;
     setNotificationProviderForTests({
       sendTextMessage: async () => ({}),
       sendTemplateMessage: async () => {
         attempts += 1;
-        if (attempts < 3) throw new Error('sementara');
-        return { providerMessageId: 'retry-success' };
+        throw new Error('timeout');
       },
       healthCheck: async () => true,
     });
 
-    const delivery = sendWhatsAppNotification(input);
-    await vi.advanceTimersByTimeAsync(299);
-    expect(attempts).toBe(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(attempts).toBe(2);
-    await vi.advanceTimersByTimeAsync(599);
-    expect(attempts).toBe(2);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(attempts).toBe(3);
-    const result = await delivery;
+    const result = await sendWhatsAppNotification(input);
 
-    expect(result.status).toBe('sent');
-    expect(state.logs[0]).toMatchObject({ status: 'sent', attempt_count: 3 });
+    expect(result.status).toBe('failed');
+    expect(attempts).toBe(1);
+    expect(state.logs[0]).toMatchObject({ status: 'failed', attempt_count: 1 });
   });
 
   it('logs an unconfigured provider in development and keeps the approval URL admin-only', async () => {

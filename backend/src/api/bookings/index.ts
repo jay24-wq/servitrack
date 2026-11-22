@@ -23,12 +23,13 @@ bookingRouter.get('/', async (req: AuthRequest, res: Response) => {
     const query = reqDb(req);
     const bookings = await query('bookings')
       .where({ 'bookings.tenant_id': tenant_id, 'bookings.branch_id': req.user?.branch_id })
-      .leftJoin('customers', 'bookings.customer_id', 'customers.id')
+      .leftJoin('customers', function (this: any) { this.on('customers.id', '=', 'bookings.customer_id').andOn('customers.tenant_id', '=', 'bookings.tenant_id'); })
       .leftJoin('devices', 'bookings.device_id', 'devices.id')
       .leftJoin('booking_slots', 'bookings.slot_id', 'booking_slots.id')
+      .leftJoin('service_tickets', function (this: any) { this.on('service_tickets.booking_id', '=', 'bookings.id').andOn('service_tickets.tenant_id', '=', 'bookings.tenant_id').andOn('service_tickets.branch_id', '=', 'bookings.branch_id'); })
       .select(
         'bookings.*',
-        query.raw('COALESCE(bookings.customer_name, customers.name) as customer_name'),
+        query.raw("COALESCE(NULLIF(service_tickets.customer_name, ''), NULLIF(bookings.customer_name, ''), customers.name) as customer_name"),
         query.raw('COALESCE(bookings.customer_phone, customers.phone_wa) as phone_wa'),
         'devices.category as device_category',
         'devices.model as device_model',
@@ -76,11 +77,15 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const { customer_id, device_id, slot_id, service_method, complaint, device_pin, device_pin_refused } = req.body;
+    const { customer_id, device_id, slot_id, service_method, complaint, customer_name, device_pin, device_pin_refused } = req.body;
     const branch_id = req.user?.branch_id;
 
     if (!branch_id || !customer_id || !device_id || !slot_id || !service_method) {
       res.status(400).json({ error: 'branch_id, customer_id, device_id, slot_id, service_method wajib diisi' });
+      return;
+    }
+    if (customer_name != null && (typeof customer_name !== 'string' || customer_name.trim().length > 100)) {
+      res.status(400).json({ error: 'Nama pelanggan maksimal 100 karakter' });
       return;
     }
 
@@ -142,7 +147,7 @@ bookingRouter.post('/', async (req: AuthRequest, res: Response) => {
           branch_id,
            slot_id,
            customer_id,
-           customer_name: customer.name,
+            customer_name: customer_name?.trim() || customer.name,
            customer_phone: customer.phone_wa,
            device_id,
           booking_code: generateBookingCode(),

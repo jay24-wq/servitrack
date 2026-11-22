@@ -128,9 +128,10 @@ export default function PaymentsPage() {
     mutationFn: () => createPaymentLink(invoiceId, idempotency.current),
     onSuccess: async (result) => {
       idempotency.current = idempotencyKey();
-      const sent = result.notification?.status === 'sent';
-      setFeedback(sent ? 'Tautan dibuat dan dikirim melalui WhatsApp bengkel.' : 'Tautan dibuat, tetapi WhatsApp gagal mengirim. Tekan “Kirim tautan” lagi untuk mencoba ulang.');
-      setError(sent ? '' : (result.notification?.error || 'WhatsApp gagal mengirim tautan pembayaran.'));
+      const sent = ['sent', 'delivered'].includes(result.notification?.status);
+      const pending = result.notification?.status === 'queued';
+      setFeedback(sent ? 'Tautan dibuat dan dikirim melalui WhatsApp bengkel.' : pending ? 'Tautan dibuat dan pengiriman WhatsApp sedang diproses.' : result.notification?.deduplicated ? 'Permintaan WhatsApp baru saja diproses. Tunggu 30 detik sebelum mencoba lagi.' : 'Tautan dibuat, tetapi WhatsApp gagal mengirim. Tunggu sebentar sebelum mencoba lagi.');
+      setError(sent || pending || result.notification?.deduplicated ? '' : (result.notification?.error || 'WhatsApp gagal mengirim tautan pembayaran.'));
       await invalidate();
     },
     onError: (linkError: any) => setError(linkError?.response?.data?.error || 'Gagal membuat tautan pembayaran.'),
@@ -138,8 +139,10 @@ export default function PaymentsPage() {
   const sendInfo = useMutation({
     mutationFn: (selectedId: string) => sendPaymentInfo(selectedId),
     onSuccess: async (result) => {
-      setFeedback(result.status === 'sent' ? 'Info pembayaran terkirim lewat WhatsApp bengkel.' : 'Info tersimpan, tetapi belum berhasil terkirim. Tekan kirim lagi untuk mencoba ulang.');
-      setError(result.status === 'sent' ? '' : (result.error || 'WhatsApp gagal mengirim info pembayaran.'));
+      const sent = ['sent', 'delivered'].includes(result.status);
+      const pending = result.status === 'queued';
+      setFeedback(sent ? 'Info pembayaran terkirim lewat WhatsApp bengkel.' : pending ? 'Pengiriman info pembayaran sedang diproses.' : result.deduplicated ? 'Permintaan WhatsApp baru saja diproses. Tunggu 30 detik sebelum mencoba lagi.' : 'Info tersimpan, tetapi WhatsApp gagal mengirim. Tunggu sebentar sebelum mencoba lagi.');
+      setError(sent || pending || result.deduplicated ? '' : (result.error || 'WhatsApp gagal mengirim info pembayaran.'));
       await invalidate();
     },
     onError: (sendError: any) => setError(sendError?.response?.data?.error || 'Gagal mengirim info pembayaran.'),
@@ -163,6 +166,7 @@ export default function PaymentsPage() {
     onSuccess: async () => { setCancelOpen(false); setCancelReason(''); setFeedback('Invoice dibatalkan dengan alasan.'); setError(''); await invalidate(); },
     onError: (cancelError: any) => setError(cancelError?.response?.data?.error || 'Gagal membatalkan invoice.'),
   });
+  const paymentMessagePending = onlineLink.isPending || sendInfo.isPending;
 
   useEffect(() => {
     if (!selected) return;
@@ -296,8 +300,8 @@ export default function PaymentsPage() {
                 <td className="px-4 py-3.5 text-xs text-stone-600">{methodLabels[row.method] ?? '—'}</td>
                 <td className="px-5 py-3.5"><div className="flex justify-end gap-1">
                   <Button variant="ghost" size="sm" onClick={() => openCashier(row.invoice_id)} title="Lihat dan kelola invoice">Lihat</Button>
-                  {row.invoice_status === 'unpaid' && <>
-                    <Button variant="ghost" size="icon" onClick={() => sendInfo.mutate(row.invoice_id)} title="Kirim info pembayaran via WhatsApp"><WhatsappLogo weight="bold" /></Button>
+                   {row.invoice_status === 'unpaid' && <>
+                    <Button variant="ghost" size="icon" disabled={paymentMessagePending} onClick={() => sendInfo.mutate(row.invoice_id)} title="Kirim info pembayaran via WhatsApp"><WhatsappLogo weight="bold" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => openCashier(row.invoice_id)} title="Catat pelunasan"><Money weight="bold" /></Button>
                   </>}
                   <Button variant="ghost" size="icon" onClick={() => printReceipt(row)} title="Cetak struk"><Printer weight="bold" /></Button>
@@ -365,8 +369,8 @@ export default function PaymentsPage() {
                   </Button>
                 </section>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <Button variant="outline" disabled={onlineLink.isPending || legacyRefund} onClick={() => onlineLink.mutate()}><LinkIcon />{onlineLink.isPending ? 'Membuat tautan…' : 'Kirim tautan pembayaran'}</Button>
-                  <Button variant="outline" disabled={sendInfo.isPending} onClick={() => sendInfo.mutate(invoiceId)}><WhatsappLogo weight="bold" />{sendInfo.isPending ? 'Mengirim…' : 'Kirim info pembayaran via WhatsApp'}</Button>
+                  <Button variant="outline" disabled={paymentMessagePending || legacyRefund} onClick={() => onlineLink.mutate()}><LinkIcon />{onlineLink.isPending ? 'Membuat tautan…' : 'Kirim tautan pembayaran'}</Button>
+                  <Button variant="outline" disabled={paymentMessagePending} onClick={() => sendInfo.mutate(invoiceId)}><WhatsappLogo weight="bold" />{sendInfo.isPending ? 'Mengirim…' : 'Kirim info pembayaran via WhatsApp'}</Button>
                 </div>
                 {selected.has_active_online && selected.snap_url && <a href={selected.snap_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-700 underline-offset-4 hover:underline"><ArrowSquareOut weight="bold" className="size-4" />Buka tautan pembayaran aktif</a>}
                 {legacyRefund && (refundOpen ? <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4"><p className="mb-3 text-xs leading-5 text-amber-900">Kembalikan dana pembayaran historis secara manual sebelum membuka kembali pelunasan penuh.</p><label className="flex flex-col gap-1.5 text-xs font-medium text-stone-700">Alasan refund wajib<textarea value={refundReason} onChange={(event) => setRefundReason(event.target.value)} rows={3} maxLength={500} className="rounded-lg border border-stone-200 bg-white p-3 text-sm text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-sky-500" placeholder="Jelaskan alasan pengembalian dana" /></label><label className="mt-3 flex flex-col gap-1.5 text-xs font-medium text-stone-700">Referensi pengembalian (opsional)<Input value={refundReference} onChange={(event) => setRefundReference(event.target.value)} placeholder="Nomor bukti transfer balik" /></label><label className="mt-3 flex items-start gap-2 text-xs leading-5 text-stone-700"><input type="checkbox" checked={externalRefundConfirmed} onChange={(event) => setExternalRefundConfirmed(event.target.checked)} className="mt-1 accent-sky-600" />Saya sudah mengembalikan dana pembayaran lama.</label><div className="mt-3 flex gap-2"><Button variant="destructive" disabled={!refundReason.trim() || !externalRefundConfirmed || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'Memproses…' : 'Catat refund historis'}</Button><Button variant="outline" onClick={() => setRefundOpen(false)}>Kembali</Button></div></div> : <Button variant="ghost" className="self-start text-amber-800" onClick={() => setRefundOpen(true)}>Rekonsiliasi pembayaran historis</Button>)}

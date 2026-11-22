@@ -78,14 +78,16 @@ invoiceRouter.get('/ready', async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.user?.tenant_id;
     if (!tenantId) return res.status(401).json({ error: 'Tenant tidak teridentifikasi' });
-    const tickets = await reqDb(req)('service_tickets as t')
-      .leftJoin('customers as c', 'c.id', 't.customer_id')
+    const query = reqDb(req);
+    const tickets = await query('service_tickets as t')
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+      .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .where({ 't.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
       .whereIn('t.current_status', ['selesai', 'siap_diambil', 'batal'])
-      .whereNotExists(reqDb(req)('invoices as i').select(reqDb(req).raw('1'))
+      .whereNotExists(query('invoices as i').select(query.raw('1'))
         .whereRaw('i.ticket_id = t.id').where('i.tenant_id', tenantId))
-      .select('t.id', 't.ticket_code', 't.tracking_code', 't.current_status', 't.completed_at', 't.service_fee', 'c.name as customer_name', 'c.phone_wa as customer_phone', 'd.model as device_model')
+      .select('t.id', 't.ticket_code', 't.tracking_code', 't.current_status', 't.completed_at', 't.service_fee', query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"), 'c.phone_wa as customer_phone', 'd.model as device_model')
       .orderBy('t.completed_at', 'desc').orderBy('t.created_at', 'desc');
 
     const data = await Promise.all(tickets.map(async (ticket) => ({
@@ -117,15 +119,17 @@ invoiceRouter.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.user?.tenant_id;
     if (!tenantId) return res.status(401).json({ error: 'Tenant tidak teridentifikasi' });
-    const invoices = await reqDb(req)('invoices as i')
+    const query = reqDb(req);
+    const invoices = await query('invoices as i')
       .leftJoin('service_tickets as t', 't.id', 'i.ticket_id')
-      .leftJoin('customers as c', 'c.id', 't.customer_id')
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+      .leftJoin('bookings as bk', function (this: any) { this.on('bk.id', '=', 't.booking_id').andOn('bk.tenant_id', '=', 't.tenant_id').andOn('bk.branch_id', '=', 't.branch_id'); })
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .leftJoin('users as handover_user', 'handover_user.id', 't.handed_over_by')
       .leftJoin('branches as b', 'b.id', 't.branch_id')
       .leftJoin('tenants as w', 'w.id', 'i.tenant_id')
       .where({ 'i.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
-      .select('i.*', 't.ticket_code', 't.tracking_code', 't.current_status', 't.handed_over_at', 't.handed_over_by', 'handover_user.name as handed_over_by_name', 'c.name as customer_name', 'c.phone_wa as customer_phone', 'd.model as device_model', 'b.name as branch_name', 'b.address as branch_address', 'w.name as workshop_name')
+      .select('i.*', 't.ticket_code', 't.tracking_code', 't.current_status', 't.handed_over_at', 't.handed_over_by', 'handover_user.name as handed_over_by_name', query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(bk.customer_name, ''), c.name) as customer_name"), 'c.phone_wa as customer_phone', 'd.model as device_model', 'b.name as branch_name', 'b.address as branch_address', 'w.name as workshop_name')
       .orderBy('i.created_at', 'desc');
     return res.json({ data: invoices.map(presentInvoice) });
   } catch (error: any) {
@@ -136,10 +140,13 @@ invoiceRouter.get('/', async (req: AuthRequest, res: Response) => {
 invoiceRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.user?.tenant_id;
-    const invoice = await reqDb(req)('invoices as i')
-      .join('service_tickets as t', 't.id', 'i.ticket_id')
+    const query = reqDb(req);
+    const invoice = await query('invoices as i')
+      .join('service_tickets as t', function (this: any) { this.on('t.id', '=', 'i.ticket_id').andOn('t.tenant_id', '=', 'i.tenant_id'); })
+      .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
       .where({ 'i.id': req.params.id, 'i.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
-      .select('i.*', 't.ticket_code', 't.tracking_code', 't.current_status')
+      .select('i.*', 't.ticket_code', 't.tracking_code', 't.current_status', query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"), 'c.phone_wa as customer_phone')
       .first();
     if (!invoice) return res.status(404).json({ error: 'Invoice tidak ditemukan' });
     return res.json({ data: presentInvoice(invoice) });

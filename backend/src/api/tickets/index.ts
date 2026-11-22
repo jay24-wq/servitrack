@@ -42,6 +42,9 @@ function safeTicketData<T extends Record<string, any>>(ticket: T): T {
 
 async function existingTicketResponse(trx: import('knex').Knex.Transaction, ticket: any) {
   const customer = await trx('customers').where({ id: ticket.customer_id, tenant_id: ticket.tenant_id }).select('name', 'phone_wa').first();
+  const booking = ticket.booking_id
+    ? await trx('bookings').where({ id: ticket.booking_id, tenant_id: ticket.tenant_id }).select('customer_name').first()
+    : null;
   const device = await trx('devices').where({ id: ticket.device_id, tenant_id: ticket.tenant_id }).select('model').first();
   const branch = await trx('branches').where({ id: ticket.branch_id, tenant_id: ticket.tenant_id }).select('name', 'address').first();
   const tenant = await trx('tenants').where({ id: ticket.tenant_id }).select('name', 'address').first();
@@ -52,7 +55,7 @@ async function existingTicketResponse(trx: import('knex').Knex.Transaction, tick
     ...safeTicketData(ticket),
     technician_name: technician?.name ?? null,
     customerPhone: customer?.phone_wa ?? '',
-    customer_name: customer?.name ?? null,
+    customer_name: ticket.customer_name?.trim() || booking?.customer_name?.trim() || customer?.name || null,
     device_model: device?.model ?? null,
     branch_name: branch?.name ?? null,
     branch_address: branch?.address ?? null,
@@ -75,17 +78,17 @@ ticketRouter.get('/', async (req: AuthRequest, res: Response) => {
     const query = reqDb(req);
     const tickets = await query('service_tickets as t')
       .where({ 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id })
-      .leftJoin('customers as c', 'c.id', 't.customer_id')
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .leftJoin('users as u', 'u.id', 't.technician_id')
-      .leftJoin('bookings as b', 'b.id', 't.booking_id')
+      .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
       .leftJoin('branches as br', 'br.id', 't.branch_id')
       .select(
         't.*',
         'br.name as branch_name',
         'br.address as branch_address',
         'b.booking_code',
-        'c.name as customer_name',
+        query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"),
         'c.phone_wa as customer_phone',
         'd.model as device_model',
         'u.name as technician_name',
@@ -119,7 +122,8 @@ ticketRouter.get('/technician/dashboard', requireRole('teknisi'), async (req: Au
     const query = reqDb(req);
     const assigned = query('service_tickets as t')
       .where({ 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id, 't.technician_id': technician_id })
-      .leftJoin('customers as c', 'c.id', 't.customer_id')
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+      .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .modify((builder) => {
         if (search) {
@@ -127,6 +131,8 @@ ticketRouter.get('/technician/dashboard', requireRole('teknisi'), async (req: Au
             .whereILike('t.ticket_code', `%${search}%`)
             .orWhereILike('t.tracking_code', `%${search}%`)
             .orWhereILike('d.model', `%${search}%`)
+            .orWhereILike('t.customer_name', `%${search}%`)
+            .orWhereILike('b.customer_name', `%${search}%`)
             .orWhereILike('c.name', `%${search}%`));
         }
       });
@@ -153,7 +159,7 @@ ticketRouter.get('/technician/dashboard', requireRole('teknisi'), async (req: Au
         't.estimated_done_at',
         't.completed_at',
         't.created_at',
-        'c.name as customer_name',
+        query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"),
         'c.phone_wa as customer_phone',
         'd.model as device_model'
       )
@@ -458,9 +464,10 @@ ticketRouter.get('/:id', async (req: AuthRequest, res: Response) => {
     const query = reqDb(req);
     const ticket = await query('service_tickets as t')
       .leftJoin('branches as br', 'br.id', 't.branch_id')
-      .leftJoin('bookings as b', 'b.id', 't.booking_id')
+      .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
       .where({ 't.id': id, 't.tenant_id': tenant_id, 't.branch_id': req.user?.branch_id })
-      .select('t.*', 'br.name as branch_name', 'br.address as branch_address', 'b.pickup_fee')
+      .select('t.*', 'br.name as branch_name', 'br.address as branch_address', 'b.pickup_fee', query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"))
       .first();
     if (!ticket) {
       res.status(404).json({ error: 'Tiket tidak ditemukan' });
@@ -548,6 +555,10 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
 
     if (!service_method) {
       res.status(400).json({ error: 'service_method wajib diisi' });
+      return;
+    }
+    if (customer_name != null && (typeof customer_name !== 'string' || customer_name.trim().length > 100)) {
+      res.status(400).json({ error: 'Nama pelanggan maksimal 100 karakter' });
       return;
     }
 
@@ -677,9 +688,12 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
           .returning('*');
         resolvedDeviceId = device.id;
       } else {
-        await trx('devices')
+        const device = await trx('devices')
           .where({ id: resolvedDeviceId, tenant_id, customer_id: resolvedCustomerId })
-          .update({ model: device_model });
+          .forUpdate()
+          .first();
+        if (!device) throw Object.assign(new Error('Perangkat tidak terhubung ke customer kontak ini'), { status: 400 });
+        await trx('devices').where({ id: resolvedDeviceId, tenant_id }).update({ model: device_model });
       }
 
       const requestedTechnician = requestedTechnicianId
@@ -699,7 +713,7 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
 
       const customerSnapshot = await trx('customers')
         .where({ id: resolvedCustomerId, tenant_id })
-        .select('phone_wa', 'address')
+        .select('name', 'phone_wa', 'address')
         .first();
 
       const [ticket] = await trx('service_tickets')
@@ -721,7 +735,7 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
           service_method: booking?.service_method ?? service_method,
            owner_id_type: owner_id_type || null,
            owner_id_number_enc: owner_id_number || null,
-           ...ticketCustomerSnapshot(booking, customerSnapshot),
+            ...ticketCustomerSnapshot(booking, customerSnapshot, customer_name),
            device_pin_enc: ticketPinRefused ? null : encryptSecretField(ticketPin),
            device_pin_refused: ticketPinRefused,
            complaint: complaint || problem || booking?.complaint || '',
@@ -805,7 +819,7 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
          entityId: ticket.id,
          newValues: {
            ticket_code: ticket.ticket_code,
-           customer_name: customer?.name ?? null,
+          customer_name: ticket.customer_name?.trim() || booking?.customer_name?.trim() || customer?.name || null,
             device_label: deviceLabel,
            current_status: ticket.current_status,
            service_method: ticket.service_method,
@@ -826,7 +840,7 @@ ticketRouter.post('/', async (req: AuthRequest, res: Response) => {
          ...safeTicketData(ticket),
          technician_name: assignedTechnician?.name ?? null,
          customerPhone: customer?.phone_wa ?? '',
-         customer_name: customer?.name ?? null,
+          customer_name: ticket.customer_name?.trim() || booking?.customer_name?.trim() || customer?.name || null,
           device_model: device?.model ?? null,
          branch_name: branch?.name ?? null,
           branch_address: branch?.address ?? null,
@@ -1037,8 +1051,8 @@ ticketRouter.put('/:id/status', async (req: AuthRequest, res: Response) => {
           action: 'ticket.status_changed',
           entityType: 'service_ticket',
           entityId: id,
-          oldValues: { ticket_code: ticket.ticket_code, customer_name: customer?.name, device_label: deviceLabel, current_status: ticket.current_status },
-          newValues: { ticket_code: ticket.ticket_code, customer_name: customer?.name, device_label: deviceLabel, current_status: to_status, note: note || null },
+          oldValues: { ticket_code: ticket.ticket_code, customer_name: ticket.customer_name || customer?.name, device_label: deviceLabel, current_status: ticket.current_status },
+          newValues: { ticket_code: ticket.ticket_code, customer_name: ticket.customer_name || customer?.name, device_label: deviceLabel, current_status: to_status, note: note || null },
         });
       }
       return { ticket, customerPhone: customer?.phone_wa ?? '', partShortages, previousStatus: ticket.current_status };
@@ -1123,8 +1137,8 @@ ticketRouter.post('/:id/close', async (req: AuthRequest, res: Response) => {
          action: 'ticket.closed',
          entityType: 'service_ticket',
          entityId: id,
-         oldValues: { ticket_code: ticket.ticket_code, customer_name: customer?.name, device_label: deviceLabel, current_status: ticket.current_status },
-         newValues: { ticket_code: ticket.ticket_code, customer_name: customer?.name, device_label: deviceLabel, current_status: finalStatus },
+          oldValues: { ticket_code: ticket.ticket_code, customer_name: ticket.customer_name || customer?.name, device_label: deviceLabel, current_status: ticket.current_status },
+          newValues: { ticket_code: ticket.ticket_code, customer_name: ticket.customer_name || customer?.name, device_label: deviceLabel, current_status: finalStatus },
        });
         return { ticket, customerPhone: customer?.phone_wa ?? '', previousStatus: ticket.current_status };
     });

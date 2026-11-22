@@ -435,7 +435,7 @@ export async function createOfflinePayment(input: OfflinePaymentInput, proof?: F
 }
 
 export async function createPaymentLink(invoiceId: string, idempotencyKey: string) {
-  const { data } = await apiClient.post<{ data: any; notification: { status: string; error?: string } }>(
+  const { data } = await apiClient.post<{ data: any; notification: { status: string; error?: string; deduplicated?: boolean } }>(
     `/payments/${encodeURIComponent(invoiceId)}/online-link`, { idempotency_key: idempotencyKey },
     { headers: { 'Idempotency-Key': idempotencyKey } }
   );
@@ -443,7 +443,7 @@ export async function createPaymentLink(invoiceId: string, idempotencyKey: strin
 }
 
 export async function sendPaymentInfo(invoiceId: string) {
-  const { data } = await apiClient.post<{ data: { status: string; error?: string } }>(`/payments/${encodeURIComponent(invoiceId)}/send-info`);
+  const { data } = await apiClient.post<{ data: { status: string; error?: string; deduplicated?: boolean } }>(`/payments/${encodeURIComponent(invoiceId)}/send-info`);
   return data.data;
 }
 

@@ -53,6 +53,7 @@ const originalEnv = {
 let fetchCalls: Array<{ url: string; init: RequestInit }>;
 let sessionPhones: Record<string, string | null>;
 let sessionStatuses: Record<string, string>;
+let sendPayload: unknown;
 
 function response(payload: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(payload) };
@@ -65,12 +66,13 @@ beforeEach(() => {
   fetchCalls = [];
   sessionPhones = {};
   sessionStatuses = {};
+  sendPayload = undefined;
   process.env.OPENWA_BASE_URL = 'https://openwa.example.invalid/api/';
   process.env.OPENWA_API_KEY = 'test-api-key';
   vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = String(input);
     fetchCalls.push({ url, init });
-    if (url.endsWith('/messages/send-text')) return response({ messageId: `message-${fetchCalls.length}`, timestamp: 1 });
+    if (url.endsWith('/messages/send-text')) return response(sendPayload ?? { messageId: `message-${fetchCalls.length}`, timestamp: 1 });
     if (url.endsWith('/api/sessions') && init.method === 'POST') {
       sessionStatuses['new-session'] = 'created';
       sessionPhones['new-session'] = null;
@@ -145,6 +147,23 @@ describe('OpenWA tenant sessions', () => {
     expect(status).toMatchObject({ connected: true, session_status: 'ready', connected_phone: '+62 812-****-7890', phone_matches: true });
     expect(status).not.toHaveProperty('session_id');
     expect(status).not.toHaveProperty('openwa_api_key');
+  });
+
+  it('treats an explicit OpenWA send failure as failed even when HTTP responds successfully', async () => {
+    addTenant('tenant-a', 'session-a', '628111111111');
+    sendPayload = { success: false, message: 'Pesan ditolak' };
+
+    await expect(new OpenWaProvider().sendTextMessage('tenant-a', '08123456789', 'test'))
+      .rejects.toThrow('Pesan ditolak');
+    expect(fetchCalls.filter(({ url }) => url.endsWith('/messages/send-text'))).toHaveLength(1);
+  });
+
+  it('returns the provider message ID from a successful OpenWA response payload', async () => {
+    addTenant('tenant-a', 'session-a', '628111111111');
+    sendPayload = { success: true, status: 'success', data: { id: 'message-123' } };
+
+    await expect(new OpenWaProvider().sendTextMessage('tenant-a', '08123456789', 'test'))
+      .resolves.toEqual({ providerMessageId: 'message-123' });
   });
 
   it('creates, starts, reads a QR, and disconnects the tenant session through OpenWA', async () => {

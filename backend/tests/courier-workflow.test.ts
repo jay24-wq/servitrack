@@ -67,22 +67,26 @@ describe('pickup courier workflow', () => {
 
   it('copies booking contact and pickup coordinates into a ticket snapshot without changing the customer', () => {
     expect(ticketCustomerSnapshot({
+      customer_name: 'Koko',
       customer_phone: '08347273648',
       pickup_address: 'Jl. Melati 8, Denpasar',
       pickup_latitude: -8.65,
       pickup_longitude: 115.21,
-    }, { phone_wa: '08999999999', address: 'Alamat profil' })).toEqual({
+    }, { name: 'jaki', phone_wa: '08999999999', address: 'Alamat profil' })).toEqual({
+      customer_name: 'Koko',
       customer_phone_snapshot: '08347273648',
       customer_address_snapshot: 'Jl. Melati 8, Denpasar',
       customer_latitude: -8.65,
       customer_longitude: 115.21,
     });
-    expect(ticketCustomerSnapshot(null, { phone_wa: '08347273648', address: 'Alamat profil' })).toEqual({
+    expect(ticketCustomerSnapshot(null, { name: 'jaki', phone_wa: '08347273648', address: 'Alamat profil' })).toEqual({
+      customer_name: 'jaki',
       customer_phone_snapshot: '08347273648',
       customer_address_snapshot: 'Alamat profil',
       customer_latitude: null,
       customer_longitude: null,
     });
+    expect(ticketCustomerSnapshot(null, { name: 'jaki' }, 'Koko').customer_name).toBe('Koko');
   });
 
   it('requires a note only for the Lainnya failure reason', () => {

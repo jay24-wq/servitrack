@@ -171,12 +171,13 @@ publicRouter.get('/quotations/:token', async (req: Request, res: Response) => {
       const quote = await trx('quotations as q')
         .join('service_tickets as t', 't.id', 'q.ticket_id')
         .join('customers as c', 'c.id', 't.customer_id')
+        .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
         .where({ 'q.tenant_id': tenantId, 'q.approval_token_hash': hashQuotationToken(token) })
         .select(
           'q.id', 'q.status', 'q.total_amount', 'q.expires_at', 'q.decided_at', 'q.decision_note',
           'q.technician_diagnosis_snapshot as technician_diagnosis',
           't.ticket_code', 't.complaint', 't.work_type',
-          'c.name as customer_name'
+          trx.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name")
         )
         .first();
       if (!quote) return null;
@@ -330,7 +331,7 @@ publicRouter.post('/bookings', async (req: Request, res: Response) => {
     });
 
     const customerName = String(name || '').trim();
-    if (!slug || !customerName || !phone_wa || !service_method) {
+    if (!slug || !customerName || customerName.length > 100 || !phone_wa || !service_method) {
       console.warn('[Booking] request validation failed', { slug: Boolean(slug), name: Boolean(name), phone_wa: Boolean(phone_wa), service_method });
       res.status(400).json({ error: 'slug, name, phone_wa, service_method wajib diisi' });
       return;

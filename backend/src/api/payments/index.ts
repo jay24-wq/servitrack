@@ -7,7 +7,7 @@ import { authMiddleware, AuthRequest, branchResolver, requireRole, withTenantCon
 import { tenantResolver, reqDb } from '@middleware/TenantResolver';
 import { logAudit } from '@services/auditLog';
 import { notifyPaymentReceived } from '@services/notifications/events';
-import { sendWhatsAppNotification } from '@services/notifications/notificationService';
+import { createQueuedWhatsAppNotification, sendWhatsAppNotification } from '@services/notifications/notificationService';
 import { getPaymentGateway, midtransSettings, newMidtransOrderId } from '@services/payments/MidtransGateway';
 import { validateOfflinePayment } from '@services/payments/paymentPolicy';
 import { presentInvoice } from '@api/invoices';
@@ -74,9 +74,10 @@ async function sendInvoiceMessage(req: AuthRequest, invoiceId: string) {
   const result = await withTenantContext(tenantId, async (trx) => {
     const invoice = await trx('invoices as i')
       .join('service_tickets as t', 't.id', 'i.ticket_id')
-      .join('customers as c', 'c.id', 't.customer_id')
+      .join('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+      .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
       .where({ 'i.id': invoiceId, 'i.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
-      .select('i.*', 't.id as ticket_id', 't.customer_id', 't.tracking_code', 'c.phone_wa', 'c.name as customer_name')
+      .select('i.*', 't.id as ticket_id', 't.customer_id', 't.tracking_code', 'c.phone_wa', trx.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"))
       .first();
     if (!invoice) throw Object.assign(new Error('Invoice tidak ditemukan'), { status: 404 });
     if (invoice.status === 'paid' || invoice.status === 'cancelled') throw Object.assign(new Error('Invoice tidak menunggu pembayaran'), { status: 409 });
@@ -89,9 +90,10 @@ async function sendInvoiceMessage(req: AuthRequest, invoiceId: string) {
   });
   const { invoice, tenant, settings, pending } = result;
   if (!invoice.phone_wa) throw Object.assign(new Error('Nomor WhatsApp pelanggan belum tersedia'), { status: 409 });
-  const notification = await sendWhatsAppNotification({
+  const notificationInput = {
     tenantId, customerId: invoice.customer_id, ticketId: invoice.ticket_id, toPhone: invoice.phone_wa,
     templateName: pending?.snap_url ? 'payment_link' : 'payment_instruction',
+    dedupeKey: `payment-info:${invoice.id}:${pending?.id ?? 'instructions'}`,
     variables: {
       invoiceNumber: invoice.invoice_no,
       trackingCode: invoice.tracking_code,
@@ -106,10 +108,32 @@ async function sendInvoiceMessage(req: AuthRequest, invoiceId: string) {
       ewalletProvider: settings?.ewallet_provider ?? '',
       ewalletAccount: settings?.ewallet_account ?? '',
     },
+  };
+  const dedupeKey = notificationInput.dedupeKey;
+  const claim = await withTenantContext(tenantId, async (trx) => {
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`payment-info:${tenantId}:${invoice.id}`]);
+    const recent = await trx('notification_logs').where({ tenant_id: tenantId, dedupe_key: dedupeKey })
+      .whereRaw("created_at >= now() - interval '30 seconds'").orderBy('created_at', 'desc').first();
+    if (recent) return { recent, logId: null };
+
+    await trx('notification_logs').where({ tenant_id: tenantId, dedupe_key: dedupeKey })
+      .update({ dedupe_key: null, updated_at: trx.fn.now() });
+    return { recent: null, logId: await createQueuedWhatsAppNotification(trx, notificationInput) };
   });
+  const notification = claim.recent
+    ? {
+        status: claim.recent.status === 'delivered' ? 'sent' : claim.recent.status,
+        id: claim.recent.id,
+        providerMessageId: claim.recent.provider_msg_id ?? null,
+        error: claim.recent.error_message ?? undefined,
+        deduplicated: true,
+      }
+    : claim.logId
+      ? await sendWhatsAppNotification(notificationInput, claim.logId)
+      : { status: 'failed', error: 'Gagal menyiapkan notifikasi WhatsApp' };
   await logAudit(reqDb(req), req, {
     action: 'payment.info_sent', entityType: 'invoice', entityId: invoice.id, ticketId: invoice.ticket_id,
-    newValues: { notification_id: notification.id ?? null, result: notification.status, online: Boolean(pending?.snap_url) },
+    newValues: { notification_id: notification.id ?? null, result: notification.status, online: Boolean(pending?.snap_url), deduplicated: 'deduplicated' in notification && notification.deduplicated },
     note: notification.status === 'failed' ? notification.error : null,
   });
   return { ...notification, online: Boolean(pending?.snap_url) };
@@ -191,13 +215,14 @@ paymentRouter.get('/', async (req: AuthRequest, res: Response) => {
     const query = reqDb(req);
     const invoices = await query('invoices as i')
       .join('service_tickets as t', 't.id', 'i.ticket_id')
-      .leftJoin('customers as c', 'c.id', 't.customer_id')
+      .leftJoin('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+      .leftJoin('bookings as bk', function (this: any) { this.on('bk.id', '=', 't.booking_id').andOn('bk.tenant_id', '=', 't.tenant_id').andOn('bk.branch_id', '=', 't.branch_id'); })
       .leftJoin('devices as d', 'd.id', 't.device_id')
       .leftJoin('users as handover_user', 'handover_user.id', 't.handed_over_by')
       .leftJoin('branches as b', 'b.id', 't.branch_id')
       .leftJoin('tenants as w', 'w.id', 'i.tenant_id')
       .where({ 'i.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
-      .select('i.*', 't.ticket_code', 't.tracking_code', 't.current_status', 't.handed_over_at', 't.handed_over_by', 'handover_user.name as handed_over_by_name', 'c.name as customer_name', 'c.phone_wa as customer_phone', 'd.model as device_model', 'b.name as branch_name', 'b.address as branch_address', 'w.name as workshop_name')
+      .select('i.*', 't.ticket_code', 't.tracking_code', 't.current_status', 't.handed_over_at', 't.handed_over_by', 'handover_user.name as handed_over_by_name', query.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(bk.customer_name, ''), c.name) as customer_name"), 'c.phone_wa as customer_phone', 'd.model as device_model', 'b.name as branch_name', 'b.address as branch_address', 'w.name as workshop_name')
       .orderBy('i.issued_at', 'desc');
     const invoiceIds = invoices.map((invoice: any) => invoice.id);
     const payments = invoiceIds.length
@@ -263,9 +288,10 @@ paymentRouter.post('/', uploadProof, async (req: AuthRequest, res: Response) => 
       const invoice = await trx('invoices').where({ id: invoice_id, tenant_id: tenantId }).forUpdate().first();
       if (!invoice) throw Object.assign(new Error('Invoice tidak ditemukan'), { status: 404 });
       if (invoice.status !== 'unpaid') throw Object.assign(new Error('Invoice harus Belum bayar untuk mencatat pelunasan penuh'), { status: 409 });
-      const ticket = await trx('service_tickets as t').join('customers as c', 'c.id', 't.customer_id')
+      const ticket = await trx('service_tickets as t').join('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+        .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
         .where({ 't.id': invoice.ticket_id, 't.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
-        .select('t.*', 'c.name as customer_name', 'c.phone_wa as customer_phone').forUpdate().first();
+        .select('t.*', trx.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"), 'c.phone_wa as customer_phone').forUpdate().first();
       if (!ticket) throw Object.assign(new Error('Invoice tidak ditemukan'), { status: 404 });
       const { changeAmount } = validateOfflinePayment({ method, amount: paymentAmount, total: Number(invoice.total), reference: reference_no, cashReceived: received });
       const existingLegacy = await trx('payments').where({ tenant_id: tenantId, invoice_id: invoice.id, status: 'paid' }).first();
@@ -339,9 +365,10 @@ paymentRouter.post('/:invoiceId/online-link', async (req: AuthRequest, res: Resp
         const existingTicket = await trx('service_tickets').where({ id: invoice.ticket_id, tenant_id: tenantId, branch_id: req.user?.branch_id }).first();
         return { payment: prior, invoice, ticket: existingTicket, create: false };
       }
-      const ticket = await trx('service_tickets as t').join('customers as c', 'c.id', 't.customer_id')
+      const ticket = await trx('service_tickets as t').join('customers as c', function (this: any) { this.on('c.id', '=', 't.customer_id').andOn('c.tenant_id', '=', 't.tenant_id'); })
+        .leftJoin('bookings as b', function (this: any) { this.on('b.id', '=', 't.booking_id').andOn('b.tenant_id', '=', 't.tenant_id').andOn('b.branch_id', '=', 't.branch_id'); })
         .where({ 't.id': invoice.ticket_id, 't.tenant_id': tenantId, 't.branch_id': req.user?.branch_id })
-        .select('t.*', 'c.name as customer_name', 'c.phone_wa as customer_phone').first();
+        .select('t.*', trx.raw("COALESCE(NULLIF(t.customer_name, ''), NULLIF(b.customer_name, ''), c.name) as customer_name"), 'c.phone_wa as customer_phone').first();
       if (!ticket) throw Object.assign(new Error('Invoice tidak ditemukan'), { status: 404 });
       const paid = await trx('payments').where({ tenant_id: tenantId, invoice_id: invoice.id, status: 'paid' }).first();
       if (paid) throw Object.assign(new Error('Pembayaran lama perlu direkonsiliasi sebelum membuat tautan baru'), { status: 409 });
